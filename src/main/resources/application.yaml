@@ -2,6 +2,14 @@ spring:
   application:
     name: GCFeed
 
+  # 上传大视频需要放开 multipart 限制，否则会在进入 Controller 前被拒绝。
+  # nginx 侧也要同步放开 client_max_body_size。
+  servlet:
+    multipart:
+      max-file-size: 256MB
+      max-request-size: 256MB
+
+
   datasource:
     url: jdbc:mysql://localhost:3306/gcfeed?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
@@ -15,9 +23,26 @@ spring:
       password: ${CR_REDIS_PASSWORD:}
       database: ${CR_REDIS_DATABASE:0}
 
+# GCFeed 业务配置
+gcfeed:
+  jwt:
+    # 生产环境务必通过环境变量覆盖为强随机密钥（至少 32 字节）
+    secret: ${GCFEED_JWT_SECRET:gcfeed-dev-only-secret-key}
+    # 访问令牌有效期（秒），与 Go 版 access_ttl: 15m 一致
+    access-ttl-seconds: 900
+    issuer: gcfeed
+  internal:
+    # 内部服务调用令牌，对应请求头 X-Internal-Token
+    token: ${GCFEED_INTERNAL_TOKEN:gcfeed-dev-only-internal-token}
+  upload:
+    # 上传文件存储根目录，相对进程工作目录
+    root: ./uploads
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+    # 开发期打印 SQL，生产环境请改为 NoLoggingImpl
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     banner: false
     db-config:
@@ -25,3 +50,21 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+
+# 监控端点：只暴露健康检查与 Prometheus 指标，避免泄露内部信息
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: info
+    io.github.gmjneko.gcfeed: debug
