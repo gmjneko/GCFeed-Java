@@ -27,7 +27,7 @@ spring:
 gcfeed:
   jwt:
     # 生产环境务必通过环境变量覆盖为强随机密钥（至少 32 字节）
-    secret: ${GCFEED_JWT_SECRET:gcfeed-dev-only-secret-key}
+    secret: ${GCFEED_JWT_SECRET:gcfeed-dev-only-secret-key-production-please-change-it}
     # 访问令牌有效期（秒），与 Go 版 access_ttl: 15m 一致
     access-ttl-seconds: 900
     issuer: gcfeed
