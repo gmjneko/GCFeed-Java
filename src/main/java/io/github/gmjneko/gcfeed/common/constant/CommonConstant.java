@@ -31,6 +31,9 @@ public final class CommonConstant {
     public static final int USER_STATUS_FROZEN = 2;
     public static final int USER_STATUS_CANCELLED = 3;
 
+    /** 视频状态：1 草稿 2 上线 3 下架 4 删除。 */
+    public static final int VIDEO_STATUS_PUBLISHED = 2;
+
     /** 字段长度上限，与建表语句保持一致。 */
     public static final int MAX_ACCOUNT_LENGTH = 64;
     public static final int MAX_NICKNAME_LENGTH = 64;

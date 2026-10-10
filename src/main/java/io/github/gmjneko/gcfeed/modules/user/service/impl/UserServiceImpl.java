@@ -10,11 +10,15 @@ import io.github.gmjneko.gcfeed.modules.user.dto.LoginDTO;
 import io.github.gmjneko.gcfeed.modules.user.dto.RegisterDTO;
 import io.github.gmjneko.gcfeed.modules.user.dto.UpdateProfileDTO;
 import io.github.gmjneko.gcfeed.modules.user.entity.User;
+import io.github.gmjneko.gcfeed.modules.user.entity.UserRelationStat;
 import io.github.gmjneko.gcfeed.modules.user.mapper.UserMapper;
+import io.github.gmjneko.gcfeed.modules.user.mapper.UserRelationStatMapper;
 import io.github.gmjneko.gcfeed.modules.user.service.UserService;
 import io.github.gmjneko.gcfeed.modules.user.vo.LoginVO;
 import io.github.gmjneko.gcfeed.modules.user.vo.PublicUserVO;
 import io.github.gmjneko.gcfeed.modules.user.vo.UserVO;
+import io.github.gmjneko.gcfeed.modules.video.entity.Video;
+import io.github.gmjneko.gcfeed.modules.video.mapper.VideoMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -23,19 +27,26 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 
-/** 实现注册、凭证认证和资料读写；注册唯一性由数据库保证，不维护通用幂等记录。 */
+/**
+ * 实现注册、凭证认证和资料读写；注册唯一性由数据库保证，不维护通用幂等记录。
+ */
 @Service
 public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
+    private final UserRelationStatMapper relationStatMapper;
+    private final VideoMapper videoMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final TokenBlacklist tokenBlacklist;
     private final String dummyPasswordHash;
 
-    public UserServiceImpl(UserMapper userMapper, PasswordEncoder passwordEncoder,
+    public UserServiceImpl(UserMapper userMapper, UserRelationStatMapper relationStatMapper,
+                           VideoMapper videoMapper, PasswordEncoder passwordEncoder,
                            JwtUtil jwtUtil, TokenBlacklist tokenBlacklist) {
         this.userMapper = userMapper;
+        this.relationStatMapper = relationStatMapper;
+        this.videoMapper = videoMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.tokenBlacklist = tokenBlacklist;
@@ -65,7 +76,14 @@ public class UserServiceImpl implements UserService {
         } catch (DuplicateKeyException ex) {
             throw new BusinessException(ErrorCode.ACCOUNT_ALREADY_EXISTS);
         }
-        userMapper.insertRelationStat(user.getId());
+        // 统计行与账号同事务创建，主键直接复用账号 ID；后续计数由 relation 模块维护。
+        relationStatMapper.insert(
+                UserRelationStat.builder()
+                        .userId(user.getId())
+                        .followingCount(0)
+                        .followerCount(0)
+                        .build()
+        );
         return UserVO.from(user);
     }
 
@@ -94,10 +112,18 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserVO getProfile(Long userId) {
         requireUserId(userId);
-        User user = userMapper.selectProfile(userId);
+        // 三个单表查询均走主键或覆盖索引；deleted = 0 由全局 logic-delete 配置自动附加。
+        User user = userMapper.selectOne(Wrappers.<User>lambdaQuery().eq(User::getId, userId));
         if (user == null) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
+        UserRelationStat stat = relationStatMapper.selectOne(Wrappers.<UserRelationStat>lambdaQuery()
+                .eq(UserRelationStat::getUserId, userId));
+        user.setFollowingCount(nonNegative(stat == null ? null : stat.getFollowingCount()));
+        user.setFollowerCount(nonNegative(stat == null ? null : stat.getFollowerCount()));
+        user.setWorkCount(videoMapper.selectCount(Wrappers.<Video>lambdaQuery()
+                .eq(Video::getAuthorId, userId)
+                .eq(Video::getStatus, CommonConstant.VIDEO_STATUS_PUBLISHED)));
         return UserVO.from(user);
     }
 
@@ -135,6 +161,13 @@ public class UserServiceImpl implements UserService {
         if (userId == null || userId <= 0) {
             throw new BusinessException(ErrorCode.INVALID_USER_ID);
         }
+    }
+
+    /**
+     * 统计行缺失按 0，负数视为脏数据归零，等价于原 SQL 的 GREATEST(COALESCE(x, 0), 0)。
+     */
+    private long nonNegative(Integer value) {
+        return value == null ? 0 : Math.max(0, value);
     }
 
     private String password(String value) {
