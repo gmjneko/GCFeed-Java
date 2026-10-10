@@ -35,6 +35,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
+        <!-- Spring Boot 4 不再提供 starter-aop；直接引入 Spring AOP 和 AspectJ weaver。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-aop</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
+        </dependency>
         <!-- 参数校验：@Valid / @NotBlank 等注解由 Hibernate Validator 提供实现 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
