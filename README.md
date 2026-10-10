@@ -6,6 +6,10 @@
 
 架构设计文档及各专题设计文档请参见 [docs](docs) 目录，在 [docs/README.md](docs/README.md) 中有索引表。
 
+## 已实现
+
+user 模块已实现注册、登录、登出、当前用户资料、公开资料和部分更新。注册由账号唯一索引防重复；本模块不引入通用幂等键。详见 [用户模块实现](docs/impl/00-用户模块实现.md)。
+
 ## 快速开始
 
 ```bash
@@ -21,3 +25,5 @@ cd console && npm install && npm run dev
 ```
 
 健康检查：`GET http://localhost:8080/actuator/health`
+
+测试：`./mvnw test`。测试使用内存 H2（MySQL 模式）和 Redis 替身，无需本地 MySQL / Redis。实际运行时受保护接口和登出需要 Redis。

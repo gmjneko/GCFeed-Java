@@ -4,10 +4,7 @@ import io.github.gmjneko.gcfeed.common.interceptor.JwtInterceptor;
 import io.github.gmjneko.gcfeed.common.jwt.JwtUtil;
 import io.github.gmjneko.gcfeed.common.jwt.TokenBlacklist;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
@@ -19,12 +16,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * Web 层配置：拦截器注册、静态资源映射、跨域策略与密码编码器。
+ * Web 层配置：拦截器注册、静态资源映射与跨域策略。
  *
- * <p>JWT 相关的 {@code JwtUtil} / {@code TokenBlacklist} 定义在 {@link JwtConfiguration}，
+ * <p>JWT 相关的 {@code JwtUtil} / {@code TokenBlacklist} 定义在 {@link AuthenticationConfiguration}，
  * 不放在本类里 —— 本类需要注入它们来构建拦截器，若同时定义它们会形成循环依赖。
  */
-@Configuration
+@Configuration(proxyBeanMethods = false)
 public class WebMvcConfiguration implements WebMvcConfigurer {
 
     private final JwtUtil jwtUtil;
@@ -32,12 +29,13 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
     private final TokenBlacklist tokenBlacklist;
 
     /** 上传文件存储根目录，与 {@code gcfeed.upload.root} 配置对应。 */
-    @Value("${gcfeed.upload.root:./uploads}")
-    private String uploadRoot;
+    private final String uploadRoot;
 
-    public WebMvcConfiguration(JwtUtil jwtUtil, TokenBlacklist tokenBlacklist) {
+    public WebMvcConfiguration(JwtUtil jwtUtil, TokenBlacklist tokenBlacklist,
+                               @Value("${gcfeed.upload.root:./uploads}") String uploadRoot) {
         this.jwtUtil = jwtUtil;
         this.tokenBlacklist = tokenBlacklist;
+        this.uploadRoot = uploadRoot;
     }
 
     /**
@@ -102,20 +100,6 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
             throw new IllegalStateException("无法创建上传目录: " + root, ex);
         }
         return root;
-    }
-
-    /**
-     * 密码编码器。
-     *
-     * <p>与 Go 版一样使用 BCrypt，但只引入 {@code spring-security-crypto} 工具包，
-     * 不启用整套 Spring Security 过滤链，鉴权仍由自研拦截器承担。
-     *
-     * <p>强度保持默认 10 轮：与 Go 的 {@code bcrypt.DefaultCost} 数值一致，
-     * 这样两端产生的哈希可以互相校验，便于数据迁移期并行运行。
-     */
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
     }
 
 }

@@ -4,6 +4,7 @@ import io.github.gmjneko.gcfeed.common.api.ErrorCode;
 import io.github.gmjneko.gcfeed.common.exception.BusinessException;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.slf4j.Logger;
@@ -131,36 +132,28 @@ public class JwtUtil {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "access token is required");
         }
 
-        Claims claims;
         try {
-            claims = Jwts.parser()
+            Jws<Claims> signedClaims = Jwts.parser()
                     .verifyWith(secretKey)
+                    .requireIssuer(properties.getIssuer())
                     .build()
-                    .parseSignedClaims(token.trim())
-                    .getPayload();
+                    .parseSignedClaims(token.trim());
+            Claims claims = signedClaims.getPayload();
+            String tokenType = claims.get(CLAIM_TOKEN_TYPE, String.class);
+            Long userId = resolveUserId(claims);
+            if (!"HS256".equals(signedClaims.getHeader().getAlgorithm())
+                    || !TOKEN_TYPE_ACCESS.equals(tokenType) || userId == null
+                    || claims.getId() == null || claims.getId().isBlank()
+                    || claims.getExpiration() == null) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED, "invalid access token");
+            }
+            return new JwtPayload(userId, claims.get(CLAIM_ROLE, String.class), tokenType,
+                    claims.getId(), toEpochSecond(claims.getIssuedAt()), toEpochSecond(claims.getExpiration()));
         } catch (JwtException | IllegalArgumentException ex) {
-            // 不把底层异常信息返回给客户端，避免泄漏实现细节；细节记到 debug 日志。
+            // 不把底层异常信息返回给客户端，也不记录原始令牌。
             log.debug("JWT 解析失败: {}", ex.getMessage());
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "invalid access token");
         }
-
-        String tokenType = claims.get(CLAIM_TOKEN_TYPE, String.class);
-        if (!TOKEN_TYPE_ACCESS.equals(tokenType)) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "invalid token type");
-        }
-
-        Long userId = resolveUserId(claims);
-        if (userId == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "invalid access token");
-        }
-
-        return new JwtPayload(
-                userId,
-                claims.get(CLAIM_ROLE, String.class),
-                tokenType,
-                claims.getId(),
-                toEpochSecond(claims.getIssuedAt()),
-                toEpochSecond(claims.getExpiration()));
     }
 
     /**

@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
  *   <li>统一自动填充 {@code createdAt} / {@code updatedAt}。</li>
  * </ol>
  */
-@Configuration
+@Configuration(proxyBeanMethods = false)
 @MapperScan("io.github.gmjneko.gcfeed.modules.**.mapper")
 public class MybatisPlusConfiguration {
 

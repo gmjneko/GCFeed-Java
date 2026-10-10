@@ -29,10 +29,11 @@ public enum ErrorCode {
     BIO_TOO_LONG(10007, "bio is too long"),
     INVALID_USER_ID(10008, "user id must be positive"),
     EMPTY_PROFILE_UPDATE(10009, "profile update is required"),
-    USER_NOT_FOUND(10010, "user not found"),
-    ACCOUNT_ALREADY_EXISTS(10011, "account already exists"),
-    INVALID_CREDENTIALS(10012, "invalid credentials"),
-    USER_STATUS_ABNORMAL(10013, "user status is abnormal"),
+    USER_NOT_FOUND(10010, "user not found", 404),
+    ACCOUNT_ALREADY_EXISTS(10011, "account already exists", 409),
+    INVALID_CREDENTIALS(10012, "invalid credentials", 401),
+    USER_STATUS_ABNORMAL(10013, "user status is abnormal", 403),
+    AVATAR_URL_TOO_LONG(10014, "avatar url is too long"),
 
     // ==================== 视频模块 20xxx ====================
     INVALID_VIDEO_ID(20001, "video id must be positive"),

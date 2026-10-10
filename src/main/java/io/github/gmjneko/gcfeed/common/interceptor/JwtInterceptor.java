@@ -31,6 +31,9 @@ import org.springframework.web.servlet.HandlerInterceptor;
  */
 public class JwtInterceptor implements HandlerInterceptor {
 
+    /** 已验证的载荷供登出接口使用，避免控制器重复解析 Authorization。 */
+    public static final String PAYLOAD_ATTRIBUTE = "gcfeed.auth.jwtPayload";
+
     private static final String AUTHORIZATION_HEADER = "Authorization";
 
     private static final String BEARER_PREFIX = "Bearer ";
@@ -46,13 +49,18 @@ public class JwtInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        UserContext.clear();
         // 静态资源、错误页等不是 HandlerMethod，直接放行。
         if (!(handler instanceof HandlerMethod handlerMethod)) {
             return true;
         }
 
-        boolean requireAuth = resolveAnnotation(handlerMethod, RequireAuth.class);
-        boolean optionalAuth = resolveAnnotation(handlerMethod, OptionalAuth.class);
+        boolean methodRequireAuth = handlerMethod.hasMethodAnnotation(RequireAuth.class);
+        boolean methodOptionalAuth = handlerMethod.hasMethodAnnotation(OptionalAuth.class);
+        boolean requireAuth = methodRequireAuth || (!methodOptionalAuth
+                && handlerMethod.getBeanType().isAnnotationPresent(RequireAuth.class));
+        boolean optionalAuth = methodOptionalAuth || (!methodRequireAuth
+                && handlerMethod.getBeanType().isAnnotationPresent(OptionalAuth.class));
 
         if (!requireAuth && !optionalAuth) {
             return true;
@@ -79,6 +87,7 @@ public class JwtInterceptor implements HandlerInterceptor {
         }
 
         UserContext.set(payload.getUserId(), payload.getRole());
+        request.setAttribute(PAYLOAD_ATTRIBUTE, payload);
         return true;
     }
 
@@ -87,20 +96,6 @@ public class JwtInterceptor implements HandlerInterceptor {
                                 Object handler, Exception ex) {
         // 线程池会复用线程，必须清理，否则下一个请求可能读到上一个用户的身份。
         UserContext.clear();
-    }
-
-    /**
-     * 解析方法级或类级注解，方法级优先。
-     *
-     * @param handlerMethod 当前处理器方法
-     * @param annotationType 注解类型
-     * @return 是否标注了该注解
-     */
-    private boolean resolveAnnotation(HandlerMethod handlerMethod, Class<? extends java.lang.annotation.Annotation> annotationType) {
-        if (handlerMethod.getMethodAnnotation(annotationType) != null) {
-            return true;
-        }
-        return handlerMethod.getBeanType().getAnnotation(annotationType) != null;
     }
 
     /**

@@ -35,6 +35,8 @@ public final class CommonConstant {
     public static final int MAX_ACCOUNT_LENGTH = 64;
     public static final int MAX_NICKNAME_LENGTH = 64;
     public static final int MAX_PASSWORD_LENGTH = 64;
+    /** BCrypt 的输入上限按 UTF-8 字节计算，多字节密码也必须满足。 */
+    public static final int MAX_PASSWORD_BYTES = 72;
     public static final int MAX_AVATAR_URL_LENGTH = 512;
     public static final int MAX_BIO_LENGTH = 255;
 
