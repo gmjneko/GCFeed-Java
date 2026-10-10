@@ -1,3 +1,27 @@
 spring:
   application:
     name: GCFeed
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/gcfeed?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: password@mysql
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: ${CR_REDIS_HOST:localhost}
+      port: ${CR_REDIS_PORT:6379}
+      password: ${CR_REDIS_PASSWORD:}
+      database: ${CR_REDIS_DATABASE:0}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
