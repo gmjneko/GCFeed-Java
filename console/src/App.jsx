@@ -2663,7 +2663,17 @@ async function apiRequest(path, options = {}) {
   }
 
   if (response.status === 204) return null;
-  return response.json();
+  const payload = await response.json();
+  if (typeof payload?.code === "number") {
+    if (payload.code !== 0) {
+      const error = new Error(payload.message || "请求失败");
+      error.status = response.status;
+      error.code = payload.code;
+      throw error;
+    }
+    return payload.data;
+  }
+  return payload;
 }
 
 async function uploadFile(file, kind, token) {
