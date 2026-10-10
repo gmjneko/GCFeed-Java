@@ -45,19 +45,3 @@
 | 校验 | Hibernate Validator | 随 Boot 管理 | `@Valid` 参数校验 |
 | 监控 | Micrometer + Prometheus | 随 Boot 管理 | 暴露 `/actuator/prometheus` |
 | 消息队列 | RabbitMQ | 待接入 | 设计已就绪，见 06 文档异步链路章节 |
-
-## 快速开始
-
-```bash
-# 1. 初始化数据库（库名 gcfeed，账号见 application.yaml）
-mysql -uroot -p"password@mysql" gcfeed < sql/schema.sql
-mysql -uroot -p"password@mysql" gcfeed < sql/data.sql
-
-# 2. 启动应用
-./mvnw spring-boot:run
-
-# 3. 前端（另开终端）
-cd console && npm install && npm run dev
-```
-
-健康检查：`GET http://localhost:8080/actuator/health`
