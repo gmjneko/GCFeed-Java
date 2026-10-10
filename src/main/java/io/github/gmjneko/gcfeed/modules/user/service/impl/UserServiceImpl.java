@@ -57,21 +57,30 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserVO register(RegisterDTO dto) {
-        String account = required(dto.account(), CommonConstant.MAX_ACCOUNT_LENGTH,
-                ErrorCode.EMPTY_ACCOUNT, ErrorCode.ACCOUNT_TOO_LONG);
+        String account = required(
+                dto.account(),
+                CommonConstant.MAX_ACCOUNT_LENGTH,
+                ErrorCode.EMPTY_ACCOUNT,
+                ErrorCode.ACCOUNT_TOO_LONG
+        );
         String password = password(dto.password());
-        String nickname = required(dto.nickname(), CommonConstant.MAX_NICKNAME_LENGTH,
-                ErrorCode.EMPTY_NICKNAME, ErrorCode.NICKNAME_TOO_LONG);
+        String nickname = required(
+                dto.nickname(),
+                CommonConstant.MAX_NICKNAME_LENGTH,
+                ErrorCode.EMPTY_NICKNAME,
+                ErrorCode.NICKNAME_TOO_LONG
+        );
+
         User user = User.builder()
                 .account(account)
                 .password(passwordEncoder.encode(password))
                 .nickname(nickname)
                 .status(CommonConstant.USER_STATUS_NORMAL)
                 .role(CommonConstant.ROLE_USER)
-                .deleted(0)
                 .build();
+
         try {
-            // 不先查后插：唯一索引同时覆盖重试、并发和已注销账号的重复注册。
+            // 唯一索引同时覆盖重试、并发和已注销账号的重复注册。
             userMapper.insert(user);
         } catch (DuplicateKeyException ex) {
             throw new BusinessException(ErrorCode.ACCOUNT_ALREADY_EXISTS);
@@ -84,24 +93,36 @@ public class UserServiceImpl implements UserService {
                         .followerCount(0)
                         .build()
         );
+
         return UserVO.from(user);
     }
 
     @Override
     public LoginVO login(LoginDTO dto) {
-        String account = required(dto.account(), CommonConstant.MAX_ACCOUNT_LENGTH,
-                ErrorCode.EMPTY_ACCOUNT, ErrorCode.ACCOUNT_TOO_LONG);
+        String account = required(
+                dto.account(),
+                CommonConstant.MAX_ACCOUNT_LENGTH,
+                ErrorCode.EMPTY_ACCOUNT,
+                ErrorCode.ACCOUNT_TOO_LONG
+        );
         String password = password(dto.password());
+
         User user = userMapper.selectOne(Wrappers.<User>lambdaQuery().eq(User::getAccount, account));
         boolean matches = passwordEncoder.matches(password, user == null ? dummyPasswordHash : user.getPassword());
+
         if (user == null || !matches) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
+
         if (!Integer.valueOf(CommonConstant.USER_STATUS_NORMAL).equals(user.getStatus())) {
             throw new BusinessException(ErrorCode.USER_STATUS_ABNORMAL);
         }
-        return new LoginVO(jwtUtil.signAccessToken(user.getId(), user.getRole()),
-                "Bearer", jwtUtil.getAccessTtlSeconds());
+
+        return LoginVO.from(
+                jwtUtil.signAccessToken(user.getId(), user.getRole()),
+                "Bearer",
+                jwtUtil.getAccessTtlSeconds()
+        );
     }
 
     @Override
@@ -117,13 +138,18 @@ public class UserServiceImpl implements UserService {
         if (user == null) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
-        UserRelationStat stat = relationStatMapper.selectOne(Wrappers.<UserRelationStat>lambdaQuery()
-                .eq(UserRelationStat::getUserId, userId));
+
+        UserRelationStat stat = relationStatMapper.selectOne(
+                Wrappers.<UserRelationStat>lambdaQuery()
+                        .eq(UserRelationStat::getUserId, userId)
+        );
+
         user.setFollowingCount(nonNegative(stat == null ? null : stat.getFollowingCount()));
         user.setFollowerCount(nonNegative(stat == null ? null : stat.getFollowerCount()));
         user.setWorkCount(videoMapper.selectCount(Wrappers.<Video>lambdaQuery()
                 .eq(Video::getAuthorId, userId)
                 .eq(Video::getStatus, CommonConstant.VIDEO_STATUS_PUBLISHED)));
+
         return UserVO.from(user);
     }
 
@@ -142,8 +168,14 @@ public class UserServiceImpl implements UserService {
         // 仅传入的字段参与 UPDATE，不能读取完整旧实体再写回，否则会覆盖其他请求的修改。
         User.Builder patchBuilder = User.builder().id(userId);
         if (dto.nickname() != null) {
-            patchBuilder.nickname(required(dto.nickname(), CommonConstant.MAX_NICKNAME_LENGTH,
-                    ErrorCode.EMPTY_NICKNAME, ErrorCode.NICKNAME_TOO_LONG));
+            patchBuilder.nickname(
+                    required(
+                            dto.nickname(),
+                            CommonConstant.MAX_NICKNAME_LENGTH,
+                            ErrorCode.EMPTY_NICKNAME,
+                            ErrorCode.NICKNAME_TOO_LONG
+                    )
+            );
         }
         if (dto.avatarUrl() != null) {
             patchBuilder.avatarUrl(optional(dto.avatarUrl(), CommonConstant.MAX_AVATAR_URL_LENGTH,
@@ -153,6 +185,7 @@ public class UserServiceImpl implements UserService {
             patchBuilder.bio(optional(dto.bio(), CommonConstant.MAX_BIO_LENGTH, ErrorCode.BIO_TOO_LONG));
         }
         userMapper.updateById(patchBuilder.build());
+
         // 同值更新在某些 JDBC 设置下影响行数为 0，不能仅凭影响行数判断用户不存在。
         return getProfile(userId);
     }
@@ -171,8 +204,12 @@ public class UserServiceImpl implements UserService {
     }
 
     private String password(String value) {
-        String normalized = required(value, CommonConstant.MAX_PASSWORD_LENGTH,
-                ErrorCode.EMPTY_PASSWORD, ErrorCode.PASSWORD_TOO_LONG);
+        String normalized = required(
+                value,
+                CommonConstant.MAX_PASSWORD_LENGTH,
+                ErrorCode.EMPTY_PASSWORD,
+                ErrorCode.PASSWORD_TOO_LONG
+        );
         if (normalized.getBytes(StandardCharsets.UTF_8).length > CommonConstant.MAX_PASSWORD_BYTES) {
             throw new BusinessException(ErrorCode.PASSWORD_TOO_LONG);
         }
