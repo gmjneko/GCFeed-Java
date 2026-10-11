@@ -1,15 +1,19 @@
 package io.github.gmjneko.gcfeed.modules.interaction.entity;
 
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.TableField;
+import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.annotation.TableName;
 
-/** Feed 只读查询使用的互动行为映射，写入能力后续由互动模块实现。 */
+/** 互动行为映射：写入使用状态机，Feed 只读取有效且未删除的记录。 */
 @TableName("interaction_action")
 public class InteractionAction {
 
     public static final String LIKE = "LIKE";
     public static final String FAVORITE = "FAVORITE";
     public static final int STATUS_ACTIVE = 1;
+    public static final int STATUS_CANCELED = 2;
 
     @TableId
     private Long id;
@@ -18,6 +22,10 @@ public class InteractionAction {
     private String actionType;
     private Integer status;
     private Integer deleted;
+    @TableField(fill = FieldFill.INSERT)
+    private LocalDateTime createdAt;
+    @TableField(fill = FieldFill.INSERT_UPDATE)
+    private LocalDateTime updatedAt;
 
     public Long getId() {
         return id;
@@ -65,5 +73,20 @@ public class InteractionAction {
 
     public void setDeleted(Integer deleted) {
         this.deleted = deleted;
+    }
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 }

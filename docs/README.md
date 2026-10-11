@@ -34,8 +34,8 @@
 | 业务表主键 | `account` 用 `id`，`video_stat` 用 `video_id` | 保持一致，但所有表补 `deleted` 逻辑删除列 | 与 MyBatis-Plus 全局逻辑删除配置对齐，避免误删数据 |
 | 鉴权 | Gin 中间件按路由组挂载 | 注解驱动（`@RequireAuth` / `@OptionalAuth`） | 解决 `/api/users/me` 与 `/api/users/{id}` 同前缀不同鉴权的问题 |
 | 登出 | 仅返回 204，服务端不失效令牌 | Redis 黑名单吊销 `jti` | 登出后令牌应真正失效，黑名单 TTL 等于剩余有效期可自清理 |
-| 事务边界 | 事务下沉到 Repository | 上移到 Service 层 `@Transactional` | 符合 Java 分层习惯，ReadOnly 查询可明确标注、便于优化 |
-| 幂等 | 靠唯一索引冲突后回查 | 优先唯一约束或状态赋值；通用记录表保留为后续方案 | user 模块无需通用幂等基础设施 |
+| 事务边界 | 事务下沉到 Repository | 由 Service 入口管理业务事务 | 事务边界与业务写入保持一致，不依赖公共幂等组件 |
+| 幂等 | 靠唯一索引冲突后回查 | Redis 只做 3 秒重复提交拦截；业务唯一约束与状态幂等负责持久化正确性 | 组件不保存响应或跨请求重放；视频发布、互动分别由数据库约束和业务状态机兜底 |
 | 死信与重试 | MQ 失败无限 requeue，无 DLX | 定义有限重试 + 死信表 | 避免毒消息形成无退避热循环 |
 | 内部接口鉴权 | 三个内部接口未挂鉴权中间件 | 统一 `X-Internal-Token` + 常量时间比较 | 原代码实际未鉴权，属于安全隐患 |
 | 时间类型 | Go `time.Time` 默认 RFC3339Nano | `LocalDateTime` + Jackson 统一格式化 | Java 生态惯例；对外统一 `yyyy-MM-dd HH:mm:ss` |
