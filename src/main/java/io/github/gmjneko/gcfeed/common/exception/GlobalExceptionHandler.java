@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -132,6 +133,14 @@ public class GlobalExceptionHandler {
             MaxUploadSizeExceededException ex, HttpServletRequest request) {
         log.warn("上传文件过大 uri={} message={}", request.getRequestURI(), ex.getMessage());
         return build(ErrorCode.UPLOAD_TOO_LARGE, ErrorCode.UPLOAD_TOO_LARGE.getMessage());
+    }
+
+    /** 处理 multipart 请求缺少 file 字段。 */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingMultipartPart(
+            MissingServletRequestPartException ex, HttpServletRequest request) {
+        log.warn("上传文件缺失 uri={} part={}", request.getRequestURI(), ex.getRequestPartName());
+        return build(ErrorCode.EMPTY_UPLOAD_FILE, ErrorCode.EMPTY_UPLOAD_FILE.getMessage());
     }
 
     /**

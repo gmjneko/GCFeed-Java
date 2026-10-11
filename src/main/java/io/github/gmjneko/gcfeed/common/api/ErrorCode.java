@@ -43,9 +43,11 @@ public enum ErrorCode {
     VIDEO_DESCRIPTION_TOO_LONG(20005, "description is too long"),
     EMPTY_MEDIA_URL(20006, "media url is required"),
     EMPTY_COVER_URL(20007, "cover url is required"),
-    VIDEO_NOT_FOUND(20008, "video not found"),
-    VIDEO_PERMISSION_DENIED(20009, "video permission denied"),
-    DUPLICATE_IDEMPOTENCY_KEY(20010, "duplicate idempotency key"),
+    VIDEO_NOT_FOUND(20008, "video not found", 404),
+    VIDEO_PERMISSION_DENIED(20009, "video permission denied", 403),
+    DUPLICATE_IDEMPOTENCY_KEY(20010, "duplicate idempotency key", 409),
+    MEDIA_URL_TOO_LONG(20011, "media url is too long"),
+    COVER_URL_TOO_LONG(20012, "cover url is too long"),
 
     // ==================== 互动模块 30xxx ====================
     INVALID_COMMENT_ID(30001, "comment id must be positive"),
@@ -104,8 +106,9 @@ public enum ErrorCode {
     VIDEO_RESOLUTION_TOO_LARGE(90007, "video resolution is too large"),
     UNSUPPORTED_VIDEO_CODEC(90008, "video codec is unsupported"),
     INVALID_VIDEO_METADATA(90009, "video metadata is invalid"),
-    VIDEO_TOOL_UNAVAILABLE(90010, "video tool is unavailable"),
-    SAVE_UPLOAD_FAILED(90011, "failed to save upload");
+    VIDEO_TOOL_UNAVAILABLE(90010, "video tool is unavailable", 500),
+    SAVE_UPLOAD_FAILED(90011, "failed to save upload", 500),
+    VIDEO_FASTSTART_FAILED(90012, "video faststart failed", 500);
 
     /** 业务错误码，成功为 0。 */
     private final int code;

@@ -32,7 +32,10 @@ public final class CommonConstant {
     public static final int USER_STATUS_CANCELLED = 3;
 
     /** 视频状态：1 草稿 2 上线 3 下架 4 删除。 */
+    public static final int VIDEO_STATUS_DRAFT = 1;
     public static final int VIDEO_STATUS_PUBLISHED = 2;
+    public static final int VIDEO_STATUS_OFFLINE = 3;
+    public static final int VIDEO_STATUS_DELETED = 4;
 
     /** 字段长度上限，与建表语句保持一致。 */
     public static final int MAX_ACCOUNT_LENGTH = 64;
@@ -46,6 +49,7 @@ public final class CommonConstant {
     public static final int MAX_VIDEO_TITLE_LENGTH = 128;
     public static final int MAX_VIDEO_DESCRIPTION_LENGTH = 512;
     public static final int MAX_MEDIA_URL_LENGTH = 512;
+    public static final int MAX_VIDEO_IDEMPOTENCY_KEY_LENGTH = 128;
 
     public static final int MAX_COMMENT_CONTENT_LENGTH = 1000;
     public static final int MAX_MESSAGE_TITLE_LENGTH = 128;

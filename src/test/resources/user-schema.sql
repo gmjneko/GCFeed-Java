@@ -52,3 +52,15 @@ CREATE TABLE `video` (
     -- Timeline Feed 主查询：按发布时间倒序翻页
     KEY `idx_status_published` (`status`, `published_at`, `id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '视频表';
+
+DROP TABLE IF EXISTS `video_stat`;
+CREATE TABLE `video_stat` (
+    `video_id`        BIGINT   NOT NULL,
+    `like_count`      INT      NOT NULL DEFAULT 0,
+    `comment_count`   INT      NOT NULL DEFAULT 0,
+    `favorite_count`  INT      NOT NULL DEFAULT 0,
+    `deleted`         TINYINT  NOT NULL DEFAULT 0,
+    `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`video_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '视频互动计数表';

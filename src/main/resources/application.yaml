@@ -6,8 +6,8 @@ spring:
   # nginx 侧也要同步放开 client_max_body_size。
   servlet:
     multipart:
-      max-file-size: 256MB
-      max-request-size: 256MB
+      max-file-size: 1024MB
+      max-request-size: 1024MB
 
 
   datasource:
