@@ -56,7 +56,7 @@ public final class UserContext {
     public static Long requireUserId() {
         Long userId = getUserId();
         if (userId == null) {
-            throw new IllegalStateException("当前请求没有登录态，请检查接口是否标注了 @RequireAuth");
+            throw new IllegalStateException("当前请求无登录态。");
         }
         return userId;
     }
