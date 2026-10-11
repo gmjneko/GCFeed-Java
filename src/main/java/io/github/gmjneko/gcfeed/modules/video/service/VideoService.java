@@ -1,6 +1,5 @@
 package io.github.gmjneko.gcfeed.modules.video.service;
 
-import io.github.gmjneko.gcfeed.common.idempotency.IdempotentResult;
 import io.github.gmjneko.gcfeed.modules.video.dto.CreateVideoDTO;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoListVO;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoVO;
@@ -18,7 +17,6 @@ public interface VideoService {
 
     void delete(Long authorId, Long videoId);
 
-    /** 发布结果用于区分首次创建和幂等重放。 */
-    record CreateResult(VideoVO video, boolean created) implements IdempotentResult {
-    }
+    /** 发布结果用于区分首次创建和业务键命中的已有视频。 */
+    record CreateResult(VideoVO video, boolean created) {}
 }

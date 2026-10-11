@@ -67,7 +67,7 @@ class VideoModuleTest {
                 @SuppressWarnings("unchecked")
                 RBucket<Object> bucket = mock(RBucket.class);
                 when(bucket.isExists()).thenReturn(false);
-                when(bucket.setIfAbsent(eq("1"), any(Duration.class))).thenReturn(true);
+                when(bucket.setIfAbsent(anyString(), any(Duration.class))).thenReturn(true);
                 return bucket;
             });
         });
@@ -102,11 +102,17 @@ class VideoModuleTest {
                         .header("Authorization", "Bearer " + authorToken)
                         .header("Idempotency-Key", "video-create-1")
                         .contentType(APPLICATION_JSON)
-                        .content("{\"title\":\"changed\",\"media_url\":\"changed\",\"cover_url\":\"changed\"}"))
+                        .content(json.writeValueAsString(Map.of("title", "first video", "description", "hello",
+                                "media_url", "/uploads/video/first.mp4", "cover_url", "/uploads/cover/first.jpg"))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString());
         assertThat(replayed.get("id").asLong()).isEqualTo(videoId);
         assertThat(replayed.get("title").asText()).isEqualTo("first video");
+        mvc.perform(post("/api/videos").header("Authorization", "Bearer " + authorToken)
+                        .header("Idempotency-Key", "video-create-1").contentType(APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("title", "changed", "media_url", "changed", "cover_url", "changed"))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(20010));
+
 
         mvc.perform(get("/api/videos/{id}", videoId))
                 .andExpect(status().isOk())

@@ -9,6 +9,7 @@ import io.github.gmjneko.gcfeed.modules.video.service.VideoService;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoListVO;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoVO;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,13 +36,14 @@ public class VideoController {
 
     @PostMapping("/videos")
     @RequireAuth
-    public ApiResponse<VideoVO> create(
+    public ResponseEntity<ApiResponse<VideoVO>> create(
             @RequestBody CreateVideoDTO dto,
             @RequestHeader(value = CommonConstant.IDEMPOTENCY_KEY_HEADER, required = false) String idempotencyKey
     ) {
-        return ApiResponse.success(
-                videoService.createPublished(UserContext.requireUserId(), dto, idempotencyKey).video()
-        );
+        VideoService.CreateResult result = videoService.createPublished(
+                UserContext.requireUserId(), dto, idempotencyKey);
+        return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(ApiResponse.success(result.video()));
     }
 
     @GetMapping("/videos/{videoId}")

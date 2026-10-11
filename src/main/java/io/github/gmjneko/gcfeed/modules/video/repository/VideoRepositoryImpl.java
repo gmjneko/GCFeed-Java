@@ -42,10 +42,7 @@ public class VideoRepositoryImpl implements VideoRepository {
 
     @Override
     public Optional<Video> findByAuthorAndIdempotencyKey(Long authorId, String idempotencyKey) {
-        Video video = videoMapper.selectOne(Wrappers.<Video>lambdaQuery()
-                .eq(Video::getAuthorId, authorId)
-                .eq(Video::getIdempotencyKey, idempotencyKey));
-        return withStat(video);
+        return withStat(videoMapper.selectByLegacyKey(authorId, idempotencyKey));
     }
 
     @Override

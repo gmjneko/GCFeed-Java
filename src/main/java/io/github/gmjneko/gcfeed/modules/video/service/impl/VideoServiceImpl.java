@@ -13,7 +13,6 @@ import io.github.gmjneko.gcfeed.modules.video.service.VideoCursorCodec;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoCursor;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoListVO;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoVO;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +32,7 @@ public class VideoServiceImpl implements VideoService {
     }
 
     @Override
-    @Idempotent
+    @Idempotent(scope = "video.publish", userId = "#authorId", key = "#idempotencyKey")
     @Transactional(rollbackFor = Exception.class)
     public CreateResult createPublished(Long authorId, CreateVideoDTO dto, String idempotencyKey) {
         requirePositive(authorId, ErrorCode.INVALID_AUTHOR_ID);
@@ -42,17 +41,6 @@ public class VideoServiceImpl implements VideoService {
         }
 
         String key = normalize(idempotencyKey);
-        if (length(key) > CommonConstant.MAX_VIDEO_IDEMPOTENCY_KEY_LENGTH) {
-            throw new BusinessException(ErrorCode.IDEMPOTENCY_KEY_TOO_LONG);
-        }
-
-        if (!key.isEmpty()) {
-            Video existing = videoRepository.findByAuthorAndIdempotencyKey(authorId, key).orElse(null);
-            if (existing != null) {
-                return new CreateResult(VideoVO.from(existing), false);
-            }
-        }
-
         String title = required(
                 dto.title(),
                 CommonConstant.MAX_VIDEO_TITLE_LENGTH,
@@ -77,6 +65,18 @@ public class VideoServiceImpl implements VideoService {
                 ErrorCode.COVER_URL_TOO_LONG
         );
 
+        // 发布键由 video 表唯一索引持久化；重复请求从业务记录重建当前响应。
+        if (!key.isEmpty()) {
+            Video existing = videoRepository.findByAuthorAndIdempotencyKey(authorId, key).orElse(null);
+            if (existing != null) {
+                if (!title.equals(existing.getTitle()) || !description.equals(normalize(existing.getDescription()))
+                        || !mediaUrl.equals(existing.getMediaUrl()) || !coverUrl.equals(existing.getCoverUrl())) {
+                    throw new BusinessException(ErrorCode.PUBLISH_REQUEST_CONFLICT);
+                }
+                return new CreateResult(VideoVO.from(existing), false);
+            }
+        }
+
         LocalDateTime now = LocalDateTime.now();
         Video video = Video.builder()
                 .authorId(authorId)
@@ -92,19 +92,8 @@ public class VideoServiceImpl implements VideoService {
                 .favoriteCount(0)
                 .build();
 
-        try {
-            videoRepository.insertVideo(video);
-        } catch (DuplicateKeyException ex) {
-            if (key.isEmpty()) {
-                throw ex;
-            }
-            // 并发请求可能同时查不到幂等键，唯一索引冲突后回查首次创建的资源。
-            Video existing = videoRepository.findByAuthorAndIdempotencyKey(authorId, key).orElse(null);
-            if (existing != null) {
-                return new CreateResult(VideoVO.from(existing), false);
-            }
-            throw new BusinessException(ErrorCode.DUPLICATE_IDEMPOTENCY_KEY, ex);
-        }
+        // 唯一索引作为持久化兜底；Redis 只处理短暂并发，不替代业务约束。
+        videoRepository.insertVideo(video);
 
         videoRepository.insertStat(VideoStat.builder()
                 .videoId(video.getId())
