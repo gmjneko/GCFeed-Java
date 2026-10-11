@@ -113,11 +113,14 @@ class VideoModuleTest {
                 .andExpect(jsonPath("$.data.id").value(videoId));
         mvc.perform(get("/api/users/{id}/videos", authorId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items.length()").value(1));
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.has_more").value(false))
+                .andExpect(jsonPath("$.data.next_cursor").isNotEmpty());
         mvc.perform(get("/api/users/me/videos")
                         .header("Authorization", "Bearer " + authorToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items.length()").value(1));
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.has_more").value(false));
 
         jdbc.update("UPDATE video SET status = 3 WHERE id = ?", videoId);
         mvc.perform(get("/api/users/{id}/videos", authorId))
@@ -158,6 +161,37 @@ class VideoModuleTest {
         mvc.perform(get("/api/users/{id}/videos?limit=0", authorId))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(70001));
+        mvc.perform(get("/api/users/{id}/videos?cursor=not-a-cursor", authorId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(70002));
+    }
+
+    @Test
+    void authorVideosUseStableCursorPagination() throws Exception {
+        long authorId = userService.register(new RegisterDTO("video-cursor", "secret", "author")).id();
+        String token = jwtUtil.signAccessToken(authorId, "user");
+        for (int i = 1; i <= 2; i++) {
+            mvc.perform(post("/api/videos")
+                            .header("Authorization", "Bearer " + token)
+                            .header("Idempotency-Key", "cursor-video-" + i)
+                            .contentType(APPLICATION_JSON)
+                            .content(json.writeValueAsString(Map.of(
+                                    "title", "cursor video " + i,
+                                    "media_url", "/uploads/video/" + i + ".mp4",
+                                    "cover_url", "/uploads/cover/" + i + ".jpg"))))
+                    .andExpect(status().isCreated());
+        }
+
+        JsonNode firstPage = data(mvc.perform(get("/api/users/{id}/videos?limit=1", authorId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.has_more").value(true))
+                .andReturn().getResponse().getContentAsString());
+        String cursor = firstPage.get("next_cursor").asText();
+        mvc.perform(get("/api/users/{id}/videos?limit=1&cursor={cursor}", authorId, cursor))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.has_more").value(false));
     }
 
     private JsonNode data(String body) {
