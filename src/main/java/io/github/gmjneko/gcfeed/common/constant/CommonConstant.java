@@ -15,7 +15,7 @@ public final class CommonConstant {
     public static final int MAX_PAGE_SIZE = 100;
     public static final int FEED_DEFAULT_PAGE_SIZE = 10;
 
-    /** 幂等键请求头名称。 */
+    /** 可选请求去重键请求头名称。 */
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
     public static final int MAX_IDEMPOTENCY_KEY_LENGTH = 128;
 
@@ -49,7 +49,6 @@ public final class CommonConstant {
     public static final int MAX_VIDEO_TITLE_LENGTH = 128;
     public static final int MAX_VIDEO_DESCRIPTION_LENGTH = 512;
     public static final int MAX_MEDIA_URL_LENGTH = 512;
-    public static final int MAX_VIDEO_IDEMPOTENCY_KEY_LENGTH = 128;
 
     public static final int MAX_COMMENT_CONTENT_LENGTH = 1000;
     public static final int MAX_MESSAGE_TITLE_LENGTH = 128;

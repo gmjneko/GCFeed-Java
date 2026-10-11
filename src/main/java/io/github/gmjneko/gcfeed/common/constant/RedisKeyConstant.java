@@ -57,8 +57,8 @@ public final class RedisKeyConstant {
     /** 用户对视频的互动状态：{@code interaction:action:v1:{userId}:{videoId}:{actionType}}，结构为 Hash。 */
     public static final String INTERACTION_ACTION = "interaction:action" + V1 + "%d:%d:%s";
 
-    /** 幂等键结果缓存：{@code idempotent:v1:{scope}:{userId}:{key}}。 */
-    public static final String IDEMPOTENT_RESULT = "idempotent" + V1 + "%s:%d:%s";
+    /** 短时重复提交标记：{@code request:submit:v1:{scope}:{userId}:{key}}。 */
+    public static final String DUPLICATE_SUBMIT = "request:submit" + V1 + "%s:%d:%s";
 
     // ==================== 认证 ====================
 
@@ -94,7 +94,7 @@ public final class RedisKeyConstant {
     /** 互动状态缓存 TTL：30 天。 */
     public static final long TTL_INTERACTION_ACTION_SECONDS = 30L * 24 * 60 * 60;
 
-    /** 幂等结果缓存 TTL：24 小时。 */
-    public static final long TTL_IDEMPOTENT_RESULT_SECONDS = 24 * 60 * 60L;
+    /** 重复提交拦截窗口：3 秒；不保存业务结果。 */
+    public static final long TTL_DUPLICATE_SUBMIT_SECONDS = 3L;
 
 }

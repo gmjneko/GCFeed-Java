@@ -45,7 +45,7 @@ public enum ErrorCode {
     EMPTY_COVER_URL(20007, "cover url is required"),
     VIDEO_NOT_FOUND(20008, "video not found", 404),
     VIDEO_PERMISSION_DENIED(20009, "video permission denied", 403),
-    DUPLICATE_IDEMPOTENCY_KEY(20010, "duplicate idempotency key", 409),
+    PUBLISH_REQUEST_CONFLICT(20010, "publish request key was used with different video data", 409),
     MEDIA_URL_TOO_LONG(20011, "media url is too long"),
     COVER_URL_TOO_LONG(20012, "cover url is too long"),
 
@@ -93,8 +93,8 @@ public enum ErrorCode {
     LOAD_RECOMMENDATION_FAILED(70011, "failed to load recommendations"),
 
     // ==================== 幂等 / 限流 80xxx ====================
-    IDEMPOTENCY_KEY_TOO_LONG(80001, "idempotency key is too long"),
-    IDEMPOTENCY_CONFLICT(80002, "idempotent request is still processing"),
+    REQUEST_KEY_TOO_LONG(80001, "request key is too long"),
+    DUPLICATE_SUBMISSION(80002, "duplicate submission within the idempotency window", 409),
 
     // ==================== 上传模块 90xxx ====================
     EMPTY_UPLOAD_FILE(90001, "file is required"),

@@ -465,28 +465,4 @@ CREATE TABLE `monitor_alert_event` (
     KEY `idx_rule_id` (`rule_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '告警事件表';
 
--- =============================================================================
--- 九、幂等请求记录表
--- =============================================================================
-
--- 通用幂等记录表：用于需要「返回首次执行结果」的写接口
--- 唯一索引保证并发下只有一个请求能抢到执行权，其余请求读取已存结果
-DROP TABLE IF EXISTS `idempotent_record`;
-CREATE TABLE `idempotent_record` (
-    `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '自增 ID',
-    `scope`        VARCHAR(64)  NOT NULL COMMENT '业务域，如 video.publish / interaction.like',
-    `user_id`      BIGINT       NOT NULL COMMENT '发起用户 ID',
-    `idempotency_key` VARCHAR(128) NOT NULL COMMENT '客户端幂等键',
-    `request_hash` VARCHAR(64)  NOT NULL COMMENT '请求参数哈希，用于识别同键不同参的冲突',
-    `response_body` JSON                 DEFAULT NULL COMMENT '首次执行结果快照',
-    `status`       TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1 处理中 2 已完成',
-    `deleted`      TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
-    `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `updated_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    -- 幂等键作用域 = 业务域 + 用户 + 键，不同用户可以复用同一个键
-    UNIQUE KEY `uk_scope_user_key` (`scope`, `user_id`, `idempotency_key`),
-    KEY `idx_created_at` (`created_at`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '通用幂等请求记录表';
-
 SET FOREIGN_KEY_CHECKS = 1;

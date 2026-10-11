@@ -1,7 +1,6 @@
 package io.github.gmjneko.gcfeed.config;
 
 import io.github.gmjneko.gcfeed.common.interceptor.JwtInterceptor;
-import io.github.gmjneko.gcfeed.common.interceptor.IdempotencyResponseInterceptor;
 import io.github.gmjneko.gcfeed.common.jwt.JwtUtil;
 import io.github.gmjneko.gcfeed.common.jwt.TokenBlacklist;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,8 +47,6 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new JwtInterceptor(jwtUtil, tokenBlacklist))
-                .addPathPatterns("/api/**");
-        registry.addInterceptor(new IdempotencyResponseInterceptor())
                 .addPathPatterns("/api/**");
     }
 
