@@ -1,4 +1,4 @@
--- 使用生产建表语句的三个相关表，在 H2 MySQL 模式验证真实 SQL 与事务。
+-- 使用生产建表语句的相关表，在 H2 MySQL 模式验证真实 SQL 与事务。
 DROP TABLE IF EXISTS `account`;
 CREATE TABLE `account` (
     `id`          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '用户 ID',
@@ -64,3 +64,20 @@ CREATE TABLE `video_stat` (
     `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`video_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '视频互动计数表';
+
+DROP TABLE IF EXISTS `interaction_action`;
+CREATE TABLE `interaction_action` (
+    `id`              BIGINT      NOT NULL AUTO_INCREMENT,
+    `user_id`         BIGINT      NOT NULL,
+    `video_id`        BIGINT      NOT NULL,
+    `action_type`     VARCHAR(16) NOT NULL,
+    `status`          TINYINT     NOT NULL DEFAULT 1,
+    `idempotency_key` VARCHAR(128) DEFAULT NULL,
+    `deleted`         TINYINT     NOT NULL DEFAULT 0,
+    `created_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_video_type` (`user_id`, `video_id`, `action_type`),
+    KEY `idx_video_type_status` (`video_id`, `action_type`, `status`),
+    KEY `idx_user_type_status` (`user_id`, `action_type`, `status`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '视频互动行为表';
