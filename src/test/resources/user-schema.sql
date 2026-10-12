@@ -76,3 +76,42 @@ CREATE TABLE `interaction_action` (
     KEY `idx_video_type_status` (`video_id`, `action_type`, `status`),
     KEY `idx_user_type_status` (`user_id`, `action_type`, `status`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '视频互动行为表';
+
+DROP TABLE IF EXISTS `interaction_comment`;
+CREATE TABLE `interaction_comment` (
+    `id`              BIGINT        NOT NULL AUTO_INCREMENT COMMENT '评论 ID',
+    `video_id`        BIGINT        NOT NULL COMMENT '视频 ID',
+    `user_id`         BIGINT        NOT NULL COMMENT '评论人 ID',
+    -- H2 counts UTF-16 units; MySQL utf8mb4 VARCHAR(1000) counts code points. Service enforces 1000.
+    `content`         VARCHAR(2000) NOT NULL COMMENT '评论内容',
+    `status`          TINYINT       NOT NULL DEFAULT 1 COMMENT '状态：1 正常 2 已删除',
+    `idempotency_key` VARCHAR(128)           DEFAULT NULL COMMENT '创建评论幂等键',
+    `created_at`      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at`      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    -- 评论列表游标分页：(video_id, status) 过滤后按 created_at DESC, id DESC 翻页
+    KEY `idx_video_status_created` (`video_id`, `status`, `created_at`, `id`),
+    -- 用户评论历史
+    KEY `idx_user_created` (`user_id`, `created_at`),
+    -- 评论创建幂等：同一用户同一幂等键只产生一条评论
+    -- 注意 MySQL 唯一索引对 NULL 不去重，未传幂等键的评论不受此约束
+    UNIQUE KEY `uk_user_idempotency` (`user_id`, `idempotency_key`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '视频评论表';
+
+DROP TABLE IF EXISTS `user_follow`;
+CREATE TABLE `user_follow` (
+    `id`              BIGINT      NOT NULL AUTO_INCREMENT COMMENT '关系 ID',
+    `user_id`         BIGINT      NOT NULL COMMENT '发起关注的用户',
+    `target_user_id`  BIGINT      NOT NULL COMMENT '被关注的用户',
+    `status`          TINYINT     NOT NULL DEFAULT 1 COMMENT '状态：1 关注中 2 已取关',
+    `idempotency_key` VARCHAR(128)         DEFAULT NULL COMMENT '最近一次写入的幂等键',
+    `created_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    -- 同一对用户只保留一行，状态在行内翻转，保证重复关注不会产生重复行
+    UNIQUE KEY `uk_user_target` (`user_id`, `target_user_id`),
+    -- 关注列表分页：按最近关注倒序
+    KEY `idx_user_status_updated` (`user_id`, `status`, `updated_at`, `target_user_id`),
+    -- 粉丝列表分页：按最近成为粉丝倒序
+    KEY `idx_target_status_updated` (`target_user_id`, `status`, `updated_at`, `user_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户关注关系表';

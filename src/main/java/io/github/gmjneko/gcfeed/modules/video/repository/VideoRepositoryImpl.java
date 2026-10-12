@@ -44,6 +44,12 @@ public class VideoRepositoryImpl implements VideoRepository {
     }
 
     @Override
+    public Optional<Video> lockById(Long videoId) {
+        return Optional.ofNullable(videoMapper.selectOne(Wrappers.<Video>lambdaQuery()
+                .eq(Video::getId, videoId).last("FOR UPDATE")));
+    }
+
+    @Override
     public Optional<Video> findByAuthorAndIdempotencyKey(Long authorId, String idempotencyKey) {
         return withStat(videoMapper.selectOne(Wrappers.<Video>lambdaQuery()
                 .eq(Video::getAuthorId, authorId)

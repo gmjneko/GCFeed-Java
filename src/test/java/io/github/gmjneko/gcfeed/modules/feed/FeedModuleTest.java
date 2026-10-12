@@ -63,7 +63,7 @@ class FeedModuleTest {
     @BeforeEach
     @SuppressWarnings("unchecked")
     void resetData() {
-        for (String table : List.of("interaction_action", "video_stat", "video", "user_relation_stat", "account")) {
+        for (String table : List.of("interaction_comment", "user_follow", "interaction_action", "video_stat", "video", "user_relation_stat", "account")) {
             jdbc.update("DELETE FROM " + table);
         }
         for (long id : List.of(1L, 2L, 9L, 10L)) {
@@ -86,7 +86,7 @@ class FeedModuleTest {
             assertThat(page.get("next_cursor").asText()).isEmpty();
             assertThat(page.get("has_more").asBoolean()).isFalse();
         }
-        for (String scene : List.of("hot", "following", "recommend", "unknown")) {
+        for (String scene : List.of("hot", "recommend", "unknown")) {
             mvc.perform(get("/api/feed-items").param("scene", scene))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(70003));
         }
@@ -254,7 +254,7 @@ class FeedModuleTest {
             assertSqlShape(false);
             sqlRecorder.statements.clear();
             request(authenticated(9).param("limit", String.valueOf(limit)));
-            assertThat(sqlRecorder.statements).hasSize(4);
+            assertThat(sqlRecorder.statements).hasSize(5);
             assertSqlShape(true);
 
             sqlRecorder.statements.clear();
@@ -267,6 +267,20 @@ class FeedModuleTest {
         sqlRecorder.statements.clear();
         request(authenticated(9));
         assertThat(sqlRecorder.statements).hasSize(1);
+    }
+
+    @Test
+    void followingUsesBoundedQueriesWithoutLoadingAllFollowedIds() throws Exception {
+        jdbc.update("INSERT INTO user_follow(user_id,target_user_id,status) VALUES (9,1,1),(9,2,1)");
+        for (int id = 1; id <= 101; id++) video(id, id % 2 + 1, TIME);
+        for (int limit : List.of(1, 10, 100)) {
+            sqlRecorder.statements.clear();
+            JsonNode page = request(authenticated(9).param("scene", "following").param("limit", String.valueOf(limit)));
+            assertThat(page.get("items").size()).isEqualTo(limit);
+            assertThat(sqlRecorder.statements).hasSize(5);
+            assertThat(sqlRecorder.statements.getFirst()).contains("exists", "user_follow", "limit ?");
+            assertThat(sqlRecorder.statements).allSatisfy(sql -> assertThat(sql).doesNotContain("count(", "offset"));
+        }
     }
 
     private void assertSqlShape(boolean authenticated) {

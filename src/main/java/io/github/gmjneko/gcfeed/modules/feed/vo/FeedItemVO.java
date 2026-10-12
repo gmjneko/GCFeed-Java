@@ -20,6 +20,7 @@ public record FeedItemVO(
         @JsonProperty("favorite_count") int favoriteCount,
         boolean liked,
         boolean favorited,
+        boolean following,
         @JsonProperty("published_at") @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime publishedAt
 ) {
 }

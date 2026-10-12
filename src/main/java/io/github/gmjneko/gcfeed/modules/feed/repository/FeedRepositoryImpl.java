@@ -14,6 +14,9 @@ import io.github.gmjneko.gcfeed.modules.video.mapper.VideoMapper;
 import io.github.gmjneko.gcfeed.modules.video.mapper.VideoStatMapper;
 import org.springframework.stereotype.Repository;
 
+import io.github.gmjneko.gcfeed.modules.relation.entity.UserFollow;
+import io.github.gmjneko.gcfeed.modules.relation.mapper.UserFollowMapper;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -22,17 +25,33 @@ import java.util.stream.Collectors;
 /** 直接查询数据库的基础 Timeline，不使用 XML、count 或按页码翻页。 */
 @Repository
 public class FeedRepositoryImpl implements FeedRepository {
+    private final UserFollowMapper follows;
     private final VideoMapper videoMapper;
     private final UserMapper userMapper;
     private final VideoStatMapper statMapper;
     private final InteractionActionMapper actionMapper;
 
     public FeedRepositoryImpl(VideoMapper videoMapper, UserMapper userMapper,
-                              VideoStatMapper statMapper, InteractionActionMapper actionMapper) {
+                              VideoStatMapper statMapper, InteractionActionMapper actionMapper, UserFollowMapper follows) {
+        this.follows = follows;
         this.videoMapper = videoMapper;
         this.userMapper = userMapper;
         this.statMapper = statMapper;
         this.actionMapper = actionMapper;
+    }
+
+    @Override
+    public List<Video> findFollowing(Long viewerId, FeedCursor cursor, int limit) {
+        return videoMapper.followingPage(viewerId, cursor, limit + 1);
+    }
+
+    @Override
+    public Set<Long> findFollowedAuthors(Long viewerId, List<Long> authorIds) {
+        if (viewerId == null || authorIds.isEmpty()) return Set.of();
+        return follows.selectList(Wrappers.<UserFollow>lambdaQuery().select(UserFollow::getTargetUserId)
+                .eq(UserFollow::getUserId, viewerId).eq(UserFollow::getStatus, 1)
+                .in(UserFollow::getTargetUserId, authorIds)).stream()
+                .map(UserFollow::getTargetUserId).collect(Collectors.toSet());
     }
 
     @Override

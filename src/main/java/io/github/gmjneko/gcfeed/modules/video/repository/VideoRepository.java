@@ -20,6 +20,8 @@ public interface VideoRepository {
 
     Optional<Video> findAnyStatusById(Long videoId);
 
+    Optional<Video> lockById(Long videoId);
+
     Optional<Video> findByAuthorAndIdempotencyKey(Long authorId, String idempotencyKey);
 
     List<Video> findPublicByAuthor(Long authorId, int limit, VideoCursor cursor);

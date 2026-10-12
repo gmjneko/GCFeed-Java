@@ -54,13 +54,14 @@ public enum ErrorCode {
     INVALID_ACTION_TYPE(30002, "action type is invalid"),
     EMPTY_COMMENT_CONTENT(30003, "comment content is required"),
     COMMENT_CONTENT_TOO_LONG(30004, "comment content is too long"),
-    COMMENT_NOT_FOUND(30005, "comment not found"),
-    COMMENT_PERMISSION_DENIED(30006, "comment permission denied"),
+    COMMENT_NOT_FOUND(30005, "comment not found", 404),
+    COMMENT_PERMISSION_DENIED(30006, "comment permission denied", 403),
+    COMMENT_REQUEST_CONFLICT(30007, "comment request key conflicts with an existing comment", 409),
 
     // ==================== 关系模块 40xxx ====================
     INVALID_TARGET_USER_ID(40001, "target user id must be positive"),
     FOLLOW_SELF_FORBIDDEN(40002, "follow self forbidden"),
-    TARGET_USER_NOT_FOUND(40003, "target user not found"),
+    TARGET_USER_NOT_FOUND(40003, "target user not found", 404),
     FOLLOW_NOT_FOUND(40004, "follow not found"),
 
     // ==================== 消息模块 50xxx ====================
@@ -83,7 +84,7 @@ public enum ErrorCode {
     INVALID_LIMIT(70001, "limit must be positive"),
     INVALID_CURSOR(70002, "cursor is invalid"),
     UNSUPPORTED_SCENE(70003, "feed scene is unsupported"),
-    VIEWER_REQUIRED(70004, "viewer is required"),
+    VIEWER_REQUIRED(70004, "viewer is required", 401),
     INVALID_OFFSET(70005, "offset must be non-negative"),
     EMPTY_SCENE(70006, "scene is required"),
     SCENE_TOO_LONG(70007, "scene is too long"),

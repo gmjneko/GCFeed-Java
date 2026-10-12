@@ -14,6 +14,10 @@ public interface FeedRepository {
     /** 最多读取 limit + 1 条，额外一条供 Service 判断 has_more。 */
     List<Video> findTimeline(FeedCursor cursor, int limit);
 
+    List<Video> findFollowing(Long viewerId, FeedCursor cursor, int limit);
+
+    java.util.Set<Long> findFollowedAuthors(Long viewerId, List<Long> authorIds);
+
     Map<Long, User> findAuthors(List<Long> authorIds);
 
     Map<Long, VideoStat> findStats(List<Long> videoIds);

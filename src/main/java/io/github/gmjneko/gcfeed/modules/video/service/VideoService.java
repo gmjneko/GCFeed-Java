@@ -11,6 +11,9 @@ public interface VideoService {
 
     VideoVO get(Long videoId);
 
+    /** 内部写业务使用，调用方必须已开启事务；返回作者 ID，用于评论删除鉴权。 */
+    Long lockForInteraction(Long videoId, boolean requirePublished);
+
     VideoListVO listPublicByAuthor(Long authorId, int limit, String cursor);
 
     VideoListVO listMine(Long authorId, int limit, String cursor);

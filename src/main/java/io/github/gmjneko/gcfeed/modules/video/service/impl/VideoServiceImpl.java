@@ -102,8 +102,8 @@ public class VideoServiceImpl implements VideoService {
                 .favoriteCount(0)
                 .build());
 
-        // TODO: 视频发布事务提交后发送 video.published 到 RabbitMQ。
-        // TODO: 接入 Outbox/事务消息、消费者重试与死信队列，避免发布事件早于数据库提交。
+        // TODO(RabbitMQ): 用事务 Outbox 可靠发布 video.published；普通作者分发粉丝收件箱，大 V 维护发件箱。
+        // TODO(RabbitMQ): 消费者实现幂等、重试和死信；禁止数据库事务提交前直接发送消息。
         return new CreateResult(VideoVO.from(video), true);
     }
 
@@ -115,6 +115,18 @@ public class VideoServiceImpl implements VideoService {
             throw new BusinessException(ErrorCode.VIDEO_NOT_FOUND);
         }
         return VideoVO.from(video);
+    }
+
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public Long lockForInteraction(Long videoId, boolean requirePublished) {
+        requirePositive(videoId, ErrorCode.INVALID_VIDEO_ID);
+        Video video = videoRepository.lockById(videoId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.VIDEO_NOT_FOUND));
+        if (requirePublished && video.getStatus() != CommonConstant.VIDEO_STATUS_PUBLISHED) {
+            throw new BusinessException(ErrorCode.VIDEO_NOT_FOUND);
+        }
+        return video.getAuthorId();
     }
 
     @Override

@@ -10,11 +10,14 @@ import io.github.gmjneko.gcfeed.modules.feed.service.FeedService;
 import io.github.gmjneko.gcfeed.modules.feed.vo.FeedItemVO;
 import io.github.gmjneko.gcfeed.modules.feed.vo.FeedPageVO;
 import io.github.gmjneko.gcfeed.modules.interaction.entity.InteractionAction;
+import io.github.gmjneko.gcfeed.modules.user.entity.User;
 import io.github.gmjneko.gcfeed.modules.video.entity.Video;
+import io.github.gmjneko.gcfeed.modules.video.entity.VideoStat;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** 校验请求、计算分页位置并按视频查询顺序组装卡片。 */
@@ -29,12 +32,18 @@ public class FeedServiceImpl implements FeedService {
     @Override
     public FeedPageVO getFeed(String scene, String cursor, int limit, Long viewerId) {
         FeedScene actualScene = FeedScene.normalize(scene);
+        if (actualScene == FeedScene.FOLLOWING && viewerId == null) {
+            throw new BusinessException(ErrorCode.VIEWER_REQUIRED);
+        }
         if (limit <= 0) {
             throw new BusinessException(ErrorCode.INVALID_LIMIT);
         }
         // 超过上限时截断；非法游标在访问数据库前直接拒绝，不能退回首页。
         int actualLimit = Math.min(limit, CommonConstant.MAX_PAGE_SIZE);
-        List<Video> videos = feedRepository.findTimeline(FeedCursor.decode(cursor), actualLimit);
+        FeedCursor position = FeedCursor.decode(cursor);
+        List<Video> videos = actualScene == FeedScene.FOLLOWING
+                ? feedRepository.findFollowing(viewerId, position, actualLimit)
+                : feedRepository.findTimeline(position, actualLimit);
         if (videos.isEmpty()) {
             // 空页不再查询关联表，并用空数组、空游标明确表示没有结果。
             return new FeedPageVO(actualScene.getValue(), List.of(), "", false);
@@ -44,8 +53,10 @@ public class FeedServiceImpl implements FeedService {
         List<Video> page = hasMore ? videos.subList(0, actualLimit) : videos;
         List<Long> videoIds = page.stream().map(Video::getId).toList();
         // 同一作者可能有多条视频，先去重再批量读取，查询次数不随页大小增长。
-        var authors = feedRepository.findAuthors(page.stream().map(Video::getAuthorId).distinct().toList());
-        var stats = feedRepository.findStats(videoIds);
+        Map<Long, User> authors = feedRepository.findAuthors(page.stream().map(Video::getAuthorId).distinct().toList());
+        Map<Long, VideoStat> stats = feedRepository.findStats(videoIds);
+        Set<Long> followedAuthors = feedRepository.findFollowedAuthors(viewerId,
+                page.stream().map(Video::getAuthorId).distinct().toList());
         Set<Long> liked = new HashSet<>();
         Set<Long> favorited = new HashSet<>();
         // 匿名请求保留空集合，卡片状态自然为 false；登录时只查询当前用户的有效行为。
@@ -70,7 +81,8 @@ public class FeedServiceImpl implements FeedService {
                     stat == null ? 0 : valueOrZero(stat.getLikeCount()),
                     stat == null ? 0 : valueOrZero(stat.getCommentCount()),
                     stat == null ? 0 : valueOrZero(stat.getFavoriteCount()),
-                    liked.contains(video.getId()), favorited.contains(video.getId()), video.getPublishedAt());
+                    liked.contains(video.getId()), favorited.contains(video.getId()),
+                    followedAuthors.contains(video.getAuthorId()), video.getPublishedAt());
         }).toList();
         // 非空末页也返回位置；是否继续由 has_more 决定，不依赖游标是否为空。
         Video last = page.get(page.size() - 1);

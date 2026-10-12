@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVideoComments } from "./useVideoComments";
 
 const TOKEN_KEY = "gcfeed.accessToken";
 const USER_KEY = "gcfeed.user";
@@ -89,32 +90,24 @@ function App() {
     refreshUnreadCount();
   }, [refreshUnreadCount, route]);
 
-  const session = useMemo(
-    () => ({
-      token,
-      user,
-      setAuth(nextToken, nextUser) {
-        setToken(nextToken);
-        setUser(nextUser);
-        if (nextToken) {
-          localStorage.setItem(TOKEN_KEY, nextToken);
-        } else {
-          localStorage.removeItem(TOKEN_KEY);
-        }
-        localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-      },
-      clearAuth() {
-        setToken("");
-        setUser(null);
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-      }
-    }),
-    [token, user]
-  );
+  const setAuth = useCallback((nextToken, nextUser) => {
+    setToken(nextToken);
+    setUser(nextUser);
+    if (nextToken) localStorage.setItem(TOKEN_KEY, nextToken);
+    else localStorage.removeItem(TOKEN_KEY);
+    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+  }, []);
+  const clearAuth = useCallback(() => {
+    setToken("");
+    setUser(null);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }, []);
+  const navigateTo = useCallback((path) => navigate(path, setRoute), []);
+  const session = useMemo(() => ({ token, user, setAuth, clearAuth }), [token, user, setAuth, clearAuth]);
 
   if (route === "/auth" || route === "/login") {
-    return <LoginPage session={session} onNavigate={(path) => navigate(path, setRoute)} />;
+    return <LoginPage session={session} onNavigate={navigateTo} />;
   }
 
   if (route === "/profile" || route === "/me") {
@@ -124,10 +117,10 @@ function App() {
         route={route}
         authenticated={Boolean(token && user)}
         unreadCount={unreadCount}
-        onNavigate={(path) => navigate(path, setRoute)}
+        onNavigate={navigateTo}
         onLogout={() => logout(session, setRoute)}
       >
-        <ProfilePage session={session} onNavigate={(path) => navigate(path, setRoute)} />
+        <ProfilePage session={session} onNavigate={navigateTo} />
       </AppShell>
     );
   }
@@ -140,10 +133,10 @@ function App() {
         route={route}
         authenticated={Boolean(token && user)}
         unreadCount={unreadCount}
-        onNavigate={(path) => navigate(path, setRoute)}
+        onNavigate={navigateTo}
         onLogout={() => logout(session, setRoute)}
       >
-        <PublicProfilePage userID={publicUserID} onNavigate={(path) => navigate(path, setRoute)} />
+        <PublicProfilePage userID={publicUserID} onNavigate={navigateTo} />
       </AppShell>
     );
   }
@@ -155,10 +148,10 @@ function App() {
         route={route}
         authenticated={Boolean(token && user)}
         unreadCount={unreadCount}
-        onNavigate={(path) => navigate(path, setRoute)}
+        onNavigate={navigateTo}
         onLogout={() => logout(session, setRoute)}
       >
-        <UploadPage session={session} onNavigate={(path) => navigate(path, setRoute)} />
+        <UploadPage session={session} onNavigate={navigateTo} />
       </AppShell>
     );
   }
@@ -170,10 +163,10 @@ function App() {
         route={route}
         authenticated={Boolean(token && user)}
         unreadCount={unreadCount}
-        onNavigate={(path) => navigate(path, setRoute)}
+        onNavigate={navigateTo}
         onLogout={() => logout(session, setRoute)}
       >
-        <MessagesPage session={session} onNavigate={(path) => navigate(path, setRoute)} onUnreadChange={refreshUnreadCount} />
+        <MessagesPage session={session} onNavigate={navigateTo} onUnreadChange={refreshUnreadCount} />
       </AppShell>
     );
   }
@@ -184,10 +177,10 @@ function App() {
       route={route}
       authenticated={Boolean(token && user)}
       unreadCount={unreadCount}
-      onNavigate={(path) => navigate(path, setRoute)}
+      onNavigate={navigateTo}
       onLogout={() => logout(session, setRoute)}
     >
-      <FeedPage feedScene={feedSceneFromRoute(route)} session={session} onNavigate={(path) => navigate(path, setRoute)} />
+      <FeedPage feedScene={feedSceneFromRoute(route)} session={session} onNavigate={navigateTo} />
     </AppShell>
   );
 }
@@ -397,10 +390,6 @@ function FeedPage({ feedScene, session, onNavigate }) {
   const [followBusyID, setFollowBusyID] = useState(0);
   const [followError, setFollowError] = useState("");
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [comments, setComments] = useState([]);
-  const [commentsState, setCommentsState] = useState("idle");
-  const [commentsError, setCommentsError] = useState("");
-  const [commentText, setCommentText] = useState("");
   const [feedState, setFeedState] = useState("loading");
   const [feedError, setFeedError] = useState("");
   const [nextCursor, setNextCursor] = useState("");
@@ -420,8 +409,32 @@ function FeedPage({ feedScene, session, onNavigate }) {
   const preloadedVideoRef = useRef(new Set());
   const currentFeedScene = FEED_SCENES.find((scene) => scene.key === feedScene) || FEED_SCENES[0];
 
+  const feedScope = `${session.token || ""}:${feedScene}`;
+  const feedScopeRef = useRef(feedScope);
+  feedScopeRef.current = feedScope;
+  const feedMounted = useRef(true);
+  const followOperation = useRef(null);
+  const excludedAuthors = useRef(new Set());
+  const followingOverrides = useRef(new Map());
+  useEffect(() => {
+    feedMounted.current = true;
+    return () => { feedMounted.current = false; };
+  }, []);
+  useEffect(() => {
+    followOperation.current = null;
+    followingOverrides.current = new Map();
+    excludedAuthors.current = new Set();
+    setFollowBusyID(0);
+    setFollowError("");
+    setFollowing({});
+  }, [feedScope]);
+
   const loadFeed = useCallback(() => {
     let live = true;
+    const requestID = createFeedRequestID(feedScene);
+    feedRequestIDRef.current = requestID;
+    followingOverrides.current = new Map();
+    excludedAuthors.current = new Set();
     if (requiresAuthFeed(feedScene) && !session.token) {
       setSwipe(null);
       setItems([]);
@@ -437,8 +450,6 @@ function FeedPage({ feedScene, session, onNavigate }) {
       };
     }
 
-    const requestID = createFeedRequestID(feedScene);
-    feedRequestIDRef.current = requestID;
     exposedRef.current = new Set();
     loadingMoreRef.current = false;
     setFeedRequestID(requestID);
@@ -449,12 +460,13 @@ function FeedPage({ feedScene, session, onNavigate }) {
     setFeedError("");
     fetchFeedPage(feedScene, session.token, "", requestID)
       .then((data) => {
-        if (!live) return;
-        const nextItems = (data.items || []).map((item) => mapFeedItem(item, feedScene, requestID));
+        if (!live || !feedMounted.current || feedScopeRef.current !== feedScope || feedRequestIDRef.current !== requestID) return;
+        const nextItems = (data.items || []).map((item) => mapFeedItem({ ...item, following: followingOverrides.current.get(item.author_id) ?? item.following }, feedScene, requestID));
         setSwipe(null);
         setItems(nextItems);
         setLiked(viewerActionMap(nextItems, "liked"));
         setFavorited(viewerActionMap(nextItems, "favorited"));
+        setFollowing(Object.fromEntries(nextItems.map((item) => [item.author_id, item.following])));
         setIndex(0);
         setCommentsOpen(false);
         setNextCursor(data.next_cursor || "");
@@ -462,7 +474,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
         setFeedState("ready");
       })
       .catch((error) => {
-        if (!live) return;
+        if (!live || !feedMounted.current || feedScopeRef.current !== feedScope || feedRequestIDRef.current !== requestID) return;
         if (error.status === 401 && requiresAuthFeed(feedScene)) {
           setItems([]);
           setIndex(0);
@@ -479,7 +491,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
     return () => {
       live = false;
     };
-  }, [currentFeedScene.label, feedScene, session.token]);
+  }, [currentFeedScene.label, feedScene, session.token, feedScope]);
 
   const loadMoreFeed = useCallback(() => {
     if (loadingMoreRef.current || feedState !== "ready" || !hasMore || !nextCursor || requiresAuthFeed(feedScene) && !session.token) {
@@ -489,50 +501,34 @@ function FeedPage({ feedScene, session, onNavigate }) {
     const requestID = feedRequestIDRef.current || feedRequestID || createFeedRequestID(feedScene);
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    setFeedError("");
     fetchFeedPage(feedScene, session.token, nextCursor, requestID)
       .then((data) => {
-        const nextItems = (data.items || []).map((item) => mapFeedItem(item, feedScene, requestID));
+        if (!feedMounted.current || feedScopeRef.current !== feedScope || feedRequestIDRef.current !== requestID) return;
+        const nextItems = (data.items || []).filter((item) => !excludedAuthors.current.has(item.author_id)).map((item) => mapFeedItem({ ...item, following: followingOverrides.current.get(item.author_id) ?? item.following }, feedScene, requestID));
         setItems((state) => appendFeedItems(state, nextItems));
         mergeViewerActions(nextItems, setLiked, "liked");
         mergeViewerActions(nextItems, setFavorited, "favorited");
+        setFollowing((previous) => ({ ...previous, ...Object.fromEntries(nextItems.map((item) => [item.author_id, item.following])) }));
         setNextCursor(data.next_cursor || "");
         setHasMore(Boolean(data.has_more && data.next_cursor));
       })
       .catch((error) => {
+        if (!feedMounted.current || feedScopeRef.current !== feedScope || feedRequestIDRef.current !== requestID) return;
+        setFeedError(error.message || "加载更多失败");
         if (error.status === 401 && requiresAuthFeed(feedScene)) {
           session.clearAuth();
           onNavigate("/auth");
         }
       })
       .finally(() => {
+        if (!feedMounted.current || feedScopeRef.current !== feedScope || feedRequestIDRef.current !== requestID) return;
         loadingMoreRef.current = false;
         setLoadingMore(false);
       });
-  }, [feedRequestID, feedScene, feedState, hasMore, nextCursor, onNavigate, session]);
+  }, [feedRequestID, feedScene, feedState, hasMore, nextCursor, onNavigate, session, feedScope]);
 
-  useEffect(() => {
-    if (!session.token) {
-      setFollowing({});
-      return undefined;
-    }
 
-    let live = true;
-    loadFollowingMap(session.token)
-      .then((map) => {
-        if (live) {
-          setFollowing(map);
-        }
-      })
-      .catch((error) => {
-        if (error.status === 401) {
-          session.clearAuth();
-          onNavigate("/auth");
-        }
-      });
-    return () => {
-      live = false;
-    };
-  }, [onNavigate, session]);
 
   useEffect(() => {
     return loadFeed();
@@ -568,10 +564,10 @@ function FeedPage({ feedScene, session, onNavigate }) {
   }, [onNavigate, session.clearAuth, session.token]);
 
   useEffect(() => {
-    if (feedState === "ready" && items.length > 0 && index >= items.length - 3) {
+    if (feedState === "ready" && !feedError && index >= items.length - 3) {
       loadMoreFeed();
     }
-  }, [feedState, index, items.length, loadMoreFeed]);
+  }, [feedState, feedError, index, items.length, loadMoreFeed]);
 
   useEffect(() => {
     return () => {
@@ -687,15 +683,17 @@ function FeedPage({ feedScene, session, onNavigate }) {
           "Idempotency-Key": `web-like-${current.video_id}-${Date.now()}`
         }
       });
+      if (!feedMounted.current || feedScopeRef.current !== feedScope) return;
       setLiked((state) => ({ ...state, [current.video_id]: Boolean(data.active) }));
       updateCurrentItem(current.video_id, { like_count: data.like_count ?? current.like_count });
     } catch (error) {
+      if (!feedMounted.current || feedScopeRef.current !== feedScope) return;
       if (error.status === 401) {
         session.clearAuth();
         onNavigate("/auth");
       }
     }
-  }, [current, liked, onNavigate, requireLogin, session, swipe, updateCurrentItem]);
+  }, [current, liked, onNavigate, requireLogin, session, swipe, updateCurrentItem, feedScope]);
 
   const setFavorite = useCallback(async () => {
     if (!current || swipe || !requireLogin()) return;
@@ -708,21 +706,25 @@ function FeedPage({ feedScene, session, onNavigate }) {
           "Idempotency-Key": `web-favorite-${current.video_id}-${Date.now()}`
         }
       });
+      if (!feedMounted.current || feedScopeRef.current !== feedScope) return;
       setFavorited((state) => ({ ...state, [current.video_id]: Boolean(data.active) }));
       updateCurrentItem(current.video_id, { favorite_count: data.favorite_count ?? current.favorite_count });
     } catch (error) {
+      if (!feedMounted.current || feedScopeRef.current !== feedScope) return;
       if (error.status === 401) {
         session.clearAuth();
         onNavigate("/auth");
       }
     }
-  }, [current, favorited, onNavigate, requireLogin, session, swipe, updateCurrentItem]);
+  }, [current, favorited, onNavigate, requireLogin, session, swipe, updateCurrentItem, feedScope]);
 
   const setFollow = useCallback(async () => {
-    if (!current || swipe || !requireLogin()) return;
+    if (!current || swipe || followOperation.current || !requireLogin()) return;
     if (current.author_id === session.user?.id) return;
 
     const authorID = current.author_id;
+    const operation = {};
+    followOperation.current = operation;
     const nextFollowing = !Boolean(following[authorID]);
     setFollowBusyID(authorID);
     setFollowError("");
@@ -734,9 +736,22 @@ function FeedPage({ feedScene, session, onNavigate }) {
           "Idempotency-Key": `web-follow-${authorID}-${Date.now()}`
         }
       });
+      if (!feedMounted.current || feedScopeRef.current !== feedScope || followOperation.current !== operation) return;
+      followingOverrides.current.set(authorID, Boolean(data.following));
       setFollowing((state) => ({ ...state, [authorID]: Boolean(data.following) }));
       updateSessionRelationCount(session, data.following_count);
+      setItems((state) => state.map((item) => item.author_id === authorID ? { ...item, following: data.following } : item));
+      if (feedScene === "following" && !data.following) {
+        excludedAuthors.current.add(authorID);
+        const remaining = items.filter((item) => item.author_id !== authorID);
+        setItems((state) => state.filter((item) => item.author_id !== authorID));
+        setIndex(Math.max(0, Math.min(index, remaining.length - 1)));
+        setCommentsOpen(false);
+        setSwipe(null);
+        loadMoreFeed();
+      }
     } catch (error) {
+      if (!feedMounted.current || feedScopeRef.current !== feedScope || followOperation.current !== operation) return;
       if (error.status === 401) {
         session.clearAuth();
         onNavigate("/auth");
@@ -744,70 +759,18 @@ function FeedPage({ feedScene, session, onNavigate }) {
       }
       setFollowError(error.message || "关注操作失败");
     } finally {
-      setFollowBusyID(0);
-    }
-  }, [current, following, onNavigate, requireLogin, session, swipe]);
-
-  const loadComments = useCallback(() => {
-    if (!current) return undefined;
-    let live = true;
-    setCommentsState("loading");
-    setCommentsError("");
-    apiRequest(`/api/videos/${current.video_id}/comments?limit=50`)
-      .then((data) => {
-        if (!live) return;
-        const nextComments = data.items || [];
-        setComments(nextComments);
-        if (!data.has_more && nextComments.length > Number(current.comment_count || 0)) {
-          updateCurrentItem(current.video_id, { comment_count: nextComments.length });
-        }
-        setCommentsState("ready");
-      })
-      .catch((error) => {
-        if (!live) return;
-        setComments([]);
-        setCommentsError(error.message || "评论加载失败");
-        setCommentsState("error");
-      });
-    return () => {
-      live = false;
-    };
-  }, [current]);
-
-  useEffect(() => {
-    if (!commentsOpen) return undefined;
-    return loadComments();
-  }, [commentsOpen, loadComments]);
-
-  async function submitComment() {
-    if (!current || !requireLogin()) return;
-    const content = commentText.trim();
-    if (!content) return;
-    try {
-      const data = await apiRequest(`/api/videos/${current.video_id}/comments`, {
-        method: "POST",
-        token: session.token,
-        headers: {
-          "Idempotency-Key": `web-comment-${current.video_id}-${Date.now()}`
-        },
-        body: {
-          content
-        }
-      });
-      setCommentText("");
-      setComments((state) => [data, ...state.filter((item) => item.id !== data.id)]);
-      updateCurrentItem(current.video_id, { comment_count: data.comment_count ?? current.comment_count + 1 });
-      setCommentsState("ready");
-    } catch (error) {
-      if (error.status === 401) {
-        session.clearAuth();
-        onNavigate("/auth");
-        return;
+      if (feedMounted.current && feedScopeRef.current === feedScope && followOperation.current === operation) {
+        followOperation.current = null;
+        setFollowBusyID(0);
       }
-      setCommentsError(error.message || "评论发布失败");
-      setCommentsState("error");
     }
-  }
+  }, [current, following, onNavigate, requireLogin, session, swipe, feedScope, feedScene, items, index, loadMoreFeed]);
+
+  const comment = useVideoComments({
+    videoId: current?.video_id, token: session.token, open: commentsOpen, request: apiRequest,
+    onCount: (videoID, count) => updateCurrentItem(videoID, { comment_count: count }),
+    onUnauthorized: () => { session.clearAuth(); onNavigate("/auth"); }
+  });
 
   function getStageHeight() {
     return feedMainRef.current?.clientHeight || window.innerHeight || 1;
@@ -1066,6 +1029,9 @@ function FeedPage({ feedScene, session, onNavigate }) {
             </div>
           </div>
         )}
+        {feedState === "ready" && feedError && <div className="feed-loading-pill">
+          {feedError} <button type="button" onClick={loadMoreFeed}>重试</button>
+        </div>}
         {feedState === "ready" && loadingMore && <div className="feed-loading-pill">加载中</div>}
         {feedState === "ready" && items.length > 0 && !hasMore && index === items.length - 1 && (
           <div className="feed-loading-pill">已到末尾</div>
@@ -1073,16 +1039,22 @@ function FeedPage({ feedScene, session, onNavigate }) {
       </section>
       <CommentPanel
         open={commentsOpen}
-        value={commentText}
-        onChange={setCommentText}
+        value={comment.text}
+        onChange={comment.setText}
         onClose={() => setCommentsOpen(false)}
-        onSubmit={submitComment}
+        onSubmit={comment.submit}
         user={session.user || emptyProfile}
         count={current?.comment_count || 0}
-        comments={comments}
-        state={commentsState}
-        error={commentsError}
-        onRetry={loadComments}
+        comments={comment.items}
+        state={comment.state}
+        error={comment.error}
+        onRetry={comment.retry}
+        onLoadMore={comment.loadMore}
+        hasMore={comment.hasMore}
+        busy={comment.busy}
+        deleting={comment.deleting}
+        onDelete={comment.remove}
+        authorID={current?.author_id}
         authenticated={Boolean(session.token && session.user)}
         onOpenUser={(profile) => openPublicProfile(profile, onNavigate)}
       />
@@ -1268,6 +1240,7 @@ function CommentPanel({
   state,
   error,
   onRetry,
+  onLoadMore, hasMore, busy, deleting, onDelete, authorID,
   authenticated,
   onOpenUser
 }) {
@@ -1288,7 +1261,7 @@ function CommentPanel({
       </header>
       <div className="comment-list">
         {state === "loading" && <CommentMessage icon="hourglass_top" title="正在加载评论" />}
-        {state === "error" && <CommentMessage icon="sync_problem" title={error || "评论加载失败"} action="重试" onAction={onRetry} />}
+        {error && <CommentMessage icon="sync_problem" title={error || "评论加载失败"} action="重试" onAction={onRetry} />}
         {state === "ready" && comments.length === 0 && <CommentMessage icon="chat_bubble" title="暂无评论" />}
         {comments.map((comment) => (
           <article className="comment-item" key={comment.id}>
@@ -1303,9 +1276,17 @@ function CommentPanel({
                 <span>{formatRelativeTime(comment.created_at)}</span>
               </div>
               <p>{comment.content}</p>
+              {authenticated && (user.id === comment.user_id || user.id === authorID || user.role === "admin") && (
+                <button className="ghost-button compact" type="button" disabled={busy || deleting !== null}
+                  onClick={() => onDelete(comment.id)}>{deleting === comment.id ? "删除中" : "删除评论"}</button>
+              )}
             </div>
           </article>
         ))}
+        {hasMore && <button className="ghost-button compact" type="button" onClick={onLoadMore}
+          disabled={state === "loadingMore" || state === "loading" || busy || deleting !== null}>
+          {state === "loadingMore" ? "加载中" : "加载更多评论"}
+        </button>}
       </div>
       <form
         className="comment-form"
@@ -1319,9 +1300,9 @@ function CommentPanel({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={authenticated ? "添加评论..." : "登录后评论"}
-          disabled={!authenticated}
+          disabled={!authenticated || busy || deleting !== null}
         />
-        <button aria-label="发送评论" disabled={!authenticated || !value.trim()}>
+        <button aria-label="发送评论" disabled={!authenticated || busy || deleting !== null || !value.trim()}>
           <span className="material-symbols-outlined">send</span>
         </button>
       </form>
@@ -1530,6 +1511,16 @@ function ProfilePage({ session, onNavigate }) {
   const [relationError, setRelationError] = useState("");
   const [relationFollowing, setRelationFollowing] = useState({});
   const [relationBusyID, setRelationBusyID] = useState(0);
+  const relationScope = `${session.token || ""}:${relationTab}:${relationModalOpen}`;
+  const relationScopeRef = useRef(relationScope);
+  relationScopeRef.current = relationScope;
+  const relationRequest = useRef(0);
+  const relationOperation = useRef(null);
+  const relationMounted = useRef(true);
+  useEffect(() => {
+    relationMounted.current = true;
+    return () => { relationMounted.current = false; relationRequest.current++; };
+  }, []);
   const followingCount = baseUser.following_count ?? baseUser.followingCount ?? 0;
   const followerCount = baseUser.follower_count ?? baseUser.followerCount ?? 0;
 
@@ -1575,58 +1566,28 @@ function ProfilePage({ session, onNavigate }) {
       });
   }, [onNavigate, session]);
 
-  useEffect(() => {
-    if (!session.token) {
-      setRelationItems([]);
-      setRelationCursor("");
-      setRelationHasMore(false);
-      setRelationFollowing({});
-      setRelationState("ready");
-      return undefined;
-    }
 
-    let live = true;
-    loadFollowingMap(session.token)
-      .then((map) => {
-        if (live) {
-          setRelationFollowing(map);
-        }
-      })
-      .catch((error) => {
-        if (error.status === 401) {
-          session.clearAuth();
-          onNavigate("/auth");
-        }
-      });
-    return () => {
-      live = false;
-    };
-  }, [onNavigate, session]);
 
   const loadRelationPage = useCallback(
     async ({ reset = false, cursor = "" } = {}) => {
       if (!session.token) return;
+      const version = ++relationRequest.current;
       const requestCursor = reset ? "" : cursor;
       setRelationState(reset ? "loading" : "loadingMore");
       setRelationError("");
       try {
         const path = relationListPath(relationTab, requestCursor);
         const data = await apiRequest(path, { token: session.token });
+        if (!relationMounted.current || relationScopeRef.current !== relationScope || version !== relationRequest.current) return;
         const items = data.items || [];
-        setRelationItems((state) => (reset ? items : [...state, ...items]));
+        setRelationItems((state) => [...new Map((reset ? items : [...state, ...items]).map((item) => [item.user_id, item])).values()]);
         setRelationCursor(data.next_cursor || "");
         setRelationHasMore(Boolean(data.has_more));
-        if (relationTab === "following") {
-          setRelationFollowing((state) => {
-            const next = { ...state };
-            for (const item of items) {
-              next[item.user_id] = true;
-            }
-            return next;
-          });
-        }
+        setRelationFollowing((state) => ({ ...(reset ? {} : state),
+          ...Object.fromEntries(items.map((item) => [item.user_id, Boolean(item.following)])) }));
         setRelationState("ready");
       } catch (error) {
+        if (!relationMounted.current || relationScopeRef.current !== relationScope || version !== relationRequest.current) return;
         if (error.status === 401) {
           session.clearAuth();
           onNavigate("/auth");
@@ -1636,15 +1597,21 @@ function ProfilePage({ session, onNavigate }) {
         setRelationState("error");
       }
     },
-    [onNavigate, relationTab, session]
+    [onNavigate, relationTab, session.token, session.clearAuth, relationScope]
   );
 
   useEffect(() => {
+    relationRequest.current++;
+    relationOperation.current = null;
+    setRelationBusyID(0);
+    setRelationFollowing({});
+    setRelationError("");
     setRelationItems([]);
     setRelationCursor("");
     setRelationHasMore(false);
     if (!session.token || !relationModalOpen) return;
     loadRelationPage({ reset: true });
+    return () => { relationRequest.current++; };
   }, [loadRelationPage, relationModalOpen, relationTab, session.token]);
 
   function openRelationModal(tab) {
@@ -1657,7 +1624,9 @@ function ProfilePage({ session, onNavigate }) {
       onNavigate("/auth");
       return;
     }
-    if (!targetUserID || targetUserID === baseUser.id) return;
+    if (!targetUserID || targetUserID === baseUser.id || relationOperation.current) return;
+    const operation = {};
+    relationOperation.current = operation;
 
     const currentFollowing = Boolean(relationFollowing[targetUserID]);
     setRelationBusyID(targetUserID);
@@ -1670,6 +1639,8 @@ function ProfilePage({ session, onNavigate }) {
           "Idempotency-Key": `web-profile-follow-${targetUserID}-${Date.now()}`
         }
       });
+      if (!relationMounted.current || relationScopeRef.current !== relationScope || relationOperation.current !== operation) return;
+      relationRequest.current++;
       setRelationFollowing((state) => ({ ...state, [targetUserID]: Boolean(data.following) }));
       if (relationTab === "following" && !data.following) {
         setRelationItems((state) => state.filter((item) => item.user_id !== targetUserID));
@@ -1677,6 +1648,7 @@ function ProfilePage({ session, onNavigate }) {
       updateSessionRelationCount(session, data.following_count);
       setRelationState("ready");
     } catch (error) {
+      if (!relationMounted.current || relationScopeRef.current !== relationScope || relationOperation.current !== operation) return;
       if (error.status === 401) {
         session.clearAuth();
         onNavigate("/auth");
@@ -1685,7 +1657,10 @@ function ProfilePage({ session, onNavigate }) {
       setRelationError(error.message || "关注操作失败");
       setRelationState("error");
     } finally {
-      setRelationBusyID(0);
+      if (relationMounted.current && relationScopeRef.current === relationScope && relationOperation.current === operation) {
+        relationOperation.current = null;
+        setRelationBusyID(0);
+      }
     }
   }
 
@@ -2012,7 +1987,7 @@ function RelationList({
                 className={`relation-follow-button ${isFollowing ? "active" : ""}`}
                 type="button"
                 onClick={() => onToggleFollow(item.user_id)}
-                disabled={busyID === item.user_id || isSelf}
+                disabled={Boolean(busyID) || loadingMore || isSelf}
               >
                 {isSelf ? "本人" : busyID === item.user_id ? "处理中" : isFollowing ? "已关注" : "关注"}
               </button>
@@ -2705,22 +2680,6 @@ async function uploadFile(file, kind, token) {
   return response.json();
 }
 
-async function loadFollowingMap(token) {
-  const next = {};
-  let cursor = "";
-  for (let page = 0; page < 20; page++) {
-    const data = await apiRequest(relationListPath("following", cursor, 100), { token });
-    for (const item of data.items || []) {
-      next[item.user_id] = true;
-    }
-    if (!data.has_more || !data.next_cursor) {
-      break;
-    }
-    cursor = data.next_cursor;
-  }
-  return next;
-}
-
 function relationListPath(tab, cursor = "", limit = 20) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) {
@@ -2751,6 +2710,7 @@ function mapFeedItem(item, feedScene = "timeline", requestID = "") {
     favorite_count: item.favorite_count,
     liked: Boolean(item.liked),
     favorited: Boolean(item.favorited),
+    following: Boolean(item.following),
     author: item.author_nickname || `创作者_${item.author_id}`,
     avatar_url: item.author_avatar_url || image.creator,
     description: item.description || "",
