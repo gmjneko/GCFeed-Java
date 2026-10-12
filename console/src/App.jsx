@@ -2677,7 +2677,15 @@ async function uploadFile(file, kind, token) {
     throw new Error(message);
   }
 
-  return response.json();
+  const payload = await response.json();
+  // 后端统一返回 { code, message, data }，成功时业务数据在 data 中
+  if (typeof payload?.code === "number") {
+    if (payload.code !== 0) {
+      throw new Error(payload.message || "上传失败");
+    }
+    return payload.data;
+  }
+  return payload;
 }
 
 function relationListPath(tab, cursor = "", limit = 20) {
