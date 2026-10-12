@@ -2,9 +2,11 @@ package io.github.gmjneko.gcfeed.modules.video.repository;
 
 import io.github.gmjneko.gcfeed.modules.video.entity.Video;
 import io.github.gmjneko.gcfeed.modules.video.entity.VideoStat;
+import io.github.gmjneko.gcfeed.modules.video.model.VideoStatField;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoCursor;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -29,4 +31,7 @@ public interface VideoRepository {
     int insertStat(VideoStat stat);
 
     int markDeleted(Long videoId);
+
+    /** 原子累加计数增量，GREATEST 兜底防止减成负数；返回 0 表示统计行不存在。 */
+    int addStatDeltas(Long videoId, Map<VideoStatField, Long> deltas);
 }

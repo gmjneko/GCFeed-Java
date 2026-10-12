@@ -67,7 +67,7 @@ class MybatisPlusConfigurationTest {
 
     private User user(String account) {
         return User.builder().account(account).password("test-hash").nickname("original")
-                .status(1).role("user").deleted(0).build();
+                .status(1).role("user").build();
     }
 
 }

@@ -16,7 +16,6 @@ public class VideoStat {
     private Integer likeCount;
     private Integer commentCount;
     private Integer favoriteCount;
-    private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
@@ -31,7 +30,6 @@ public class VideoStat {
         this.likeCount = builder.likeCount;
         this.commentCount = builder.commentCount;
         this.favoriteCount = builder.favoriteCount;
-        this.deleted = builder.deleted;
         this.createdAt = builder.createdAt;
         this.updatedAt = builder.updatedAt;
     }
@@ -72,14 +70,6 @@ public class VideoStat {
         this.favoriteCount = favoriteCount;
     }
 
-    public Integer getDeleted() {
-        return deleted;
-    }
-
-    public void setDeleted(Integer deleted) {
-        this.deleted = deleted;
-    }
-
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -101,7 +91,6 @@ public class VideoStat {
         private Integer likeCount;
         private Integer commentCount;
         private Integer favoriteCount;
-        private Integer deleted;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
 
@@ -122,11 +111,6 @@ public class VideoStat {
 
         public Builder favoriteCount(Integer value) {
             this.favoriteCount = value;
-            return this;
-        }
-
-        public Builder deleted(Integer value) {
-            this.deleted = value;
             return this;
         }
 

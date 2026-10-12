@@ -3,22 +3,40 @@ package io.github.gmjneko.gcfeed.modules.interaction.service.impl;
 import io.github.gmjneko.gcfeed.common.annotation.Idempotent;
 import io.github.gmjneko.gcfeed.common.api.ErrorCode;
 import io.github.gmjneko.gcfeed.common.exception.BusinessException;
-import io.github.gmjneko.gcfeed.modules.interaction.entity.InteractionAction;
 import io.github.gmjneko.gcfeed.modules.interaction.model.ActionType;
 import io.github.gmjneko.gcfeed.modules.interaction.repository.InteractionRepository;
 import io.github.gmjneko.gcfeed.modules.interaction.service.InteractionService;
 import io.github.gmjneko.gcfeed.modules.interaction.vo.ActionVO;
+import io.github.gmjneko.gcfeed.modules.video.entity.VideoStat;
+import io.github.gmjneko.gcfeed.modules.video.model.VideoStatField;
+import io.github.gmjneko.gcfeed.modules.video.service.VideoStatDeltaBuffer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-/** 公开方法开启事务，私有方法统一处理状态与计数。 */
+import java.util.Map;
+
+/**
+ * 互动状态强一致、计数最终一致。
+ *
+ * <p>interaction_action 是事实来源，在事务内同步翻转；video_stat 的计数只在事务提交后
+ * 记入增量缓冲，由定时任务合并刷库，请求路径上不再锁视频行或计数行。
+ */
 @Service
-@Transactional(rollbackFor = Exception.class)
+@Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
 public class InteractionServiceImpl implements InteractionService {
-    private final InteractionRepository repository;
+    private static final Logger log = LoggerFactory.getLogger(InteractionServiceImpl.class);
 
-    public InteractionServiceImpl(InteractionRepository repository) {
+    private final InteractionRepository repository;
+    private final VideoStatDeltaBuffer statBuffer;
+
+    public InteractionServiceImpl(InteractionRepository repository, VideoStatDeltaBuffer statBuffer) {
         this.repository = repository;
+        this.statBuffer = statBuffer;
     }
 
     @Override
@@ -49,35 +67,51 @@ public class InteractionServiceImpl implements InteractionService {
         if (videoId == null || videoId <= 0) {
             throw new BusinessException(ErrorCode.INVALID_VIDEO_ID);
         }
-        // 锁顺序固定为视频 → 行为 → 统计；同视频的不同请求键也串行处理。
-        repository.lockPublishedVideo(videoId).orElseThrow(() -> new BusinessException(ErrorCode.VIDEO_NOT_FOUND));
-        InteractionAction action = repository.lockAction(userId, videoId, type).orElse(null);
-        boolean wasActive = action != null && Integer.valueOf(0).equals(action.getDeleted())
-                && Integer.valueOf(InteractionAction.STATUS_ACTIVE).equals(action.getStatus());
-        int target = active ? InteractionAction.STATUS_ACTIVE : InteractionAction.STATUS_CANCELED;
-        int delta = (active ? 1 : 0) - (wasActive ? 1 : 0);
-        if (action == null) {
-            // 首次 DELETE 也创建取消态记录，为后续状态转换保留稳定的唯一键。
-            action = new InteractionAction();
-            action.setUserId(userId);
-            action.setVideoId(videoId);
-            action.setActionType(type.name());
-            action.setStatus(target);
-            action.setDeleted(0);
-            repository.insertAction(action);
-        } else if (!Integer.valueOf(target).equals(action.getStatus()) || !Integer.valueOf(0).equals(action.getDeleted())) {
-            // 墓碑视为未生效，恢复原行而不是再次插入，计数仍只取决于有效状态的变化。
-            repository.setState(action.getId(), target);
+        if (!repository.isPublishedVideo(videoId)) {
+            throw new BusinessException(ErrorCode.VIDEO_NOT_FOUND);
         }
-        var stat = repository.lockStat(videoId)
-                .orElseThrow(() -> new IllegalStateException("published video has no active stat"));
+        boolean changed = active ? repository.activate(userId, videoId, type) : repository.cancel(userId, videoId, type);
+        int delta = changed ? (active ? 1 : -1) : 0;
         if (delta != 0) {
-            repository.changeCount(videoId, type, delta);
-            stat = repository.lockStat(videoId).orElseThrow();
+            recordDeltaAfterCommit(videoId, type.statField(), delta);
             // TODO(RabbitMQ): 通过 Outbox/可靠的提交后机制发布 interaction.action_changed，禁止提交前发送。
             // TODO(RabbitMQ): 消费者需实现事件幂等、有限重试和死信，再接入热榜与通知（自赞不通知）。
         }
-        // 无状态变化时返回当前状态与计数；请求键只拦截并发提交，不重放历史响应。
-        return new ActionVO(videoId, type.name(), active, stat.getLikeCount(), stat.getFavoriteCount());
+        // 前端以响应计数为准不做乐观更新，所以要叠加尚未刷库的增量和本次尚未记入缓冲的变化。
+        VideoStat stat = repository.findStat(videoId).orElse(null);
+        Map<VideoStatField, Long> pending = pendingDeltas(videoId);
+        return new ActionVO(videoId, type.name(), active,
+                currentCount(stat == null ? null : stat.getLikeCount(), pending, VideoStatField.LIKE_COUNT,
+                        type == ActionType.LIKE ? delta : 0),
+                currentCount(stat == null ? null : stat.getFavoriteCount(), pending, VideoStatField.FAVORITE_COUNT,
+                        type == ActionType.FAVORITE ? delta : 0));
+    }
+
+    /** 回滚的事务不能留下增量；提交后记录失败只影响计数，由对账任务纠正，不能让已成功的互动返回错误。 */
+    private void recordDeltaAfterCommit(Long videoId, VideoStatField field, int delta) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    statBuffer.add(videoId, field, delta);
+                } catch (RuntimeException ex) {
+                    log.warn("记录计数增量失败，等待对账纠正 videoId={} field={} delta={}", videoId, field, delta, ex);
+                }
+            }
+        });
+    }
+
+    private Map<VideoStatField, Long> pendingDeltas(Long videoId) {
+        try {
+            return statBuffer.pending(videoId);
+        } catch (RuntimeException ex) {
+            log.warn("读取待刷库计数失败，响应只使用已刷库计数 videoId={}", videoId, ex);
+            return Map.of();
+        }
+    }
+
+    private int currentCount(Integer stored, Map<VideoStatField, Long> pending, VideoStatField field, int ownDelta) {
+        long value = (stored == null ? 0 : stored) + pending.getOrDefault(field, 0L) + ownDelta;
+        return (int) Math.max(0, value);
     }
 }

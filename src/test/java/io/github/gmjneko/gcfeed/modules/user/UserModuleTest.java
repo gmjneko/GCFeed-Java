@@ -163,9 +163,10 @@ class UserModuleTest {
             login("alice", "secret").andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(10013));
             login("alice", "wrong").andExpect(status().isUnauthorized());
         }
-        jdbc.update("UPDATE account SET deleted = 1 WHERE id = ?", id);
-        login("alice", "secret").andExpect(status().isUnauthorized());
+        String token = jwtUtil.signAccessToken(id, "user");
         mvc.perform(get("/api/users/" + id)).andExpect(status().isNotFound());
+        patchProfile(token, "{\"bio\":\"after cancel\"}").andExpect(status().isNotFound());
+        assertThat(jdbc.queryForObject("SELECT bio FROM account WHERE id = ?", String.class, id)).isNull();
         registerRequest("alice", "secret", "again").andExpect(status().isConflict());
     }
 
@@ -219,14 +220,13 @@ class UserModuleTest {
     }
 
     @Test
-    void publicProfileHidesIdentityAndCountsOnlyPublishedUndeletedWorks() throws Exception {
+    void publicProfileHidesIdentityAndCountsOnlyPublishedWorks() throws Exception {
         long id = register("alice", "secret", "name").get("id").asLong();
         jdbc.update("UPDATE user_relation_stat SET following_count = 3, follower_count = 8 WHERE user_id = ?", id);
         for (int videoStatus : List.of(1, 2, 3, 4)) {
             jdbc.update("INSERT INTO video(author_id, title, media_url, cover_url, status) VALUES (?, 't', 'm', 'c', ?)",
                     id, videoStatus);
         }
-        jdbc.update("INSERT INTO video(author_id, title, media_url, cover_url, status, deleted) VALUES (?, 't', 'm', 'c', 2, 1)", id);
         mvc.perform(get("/api/users/" + id)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.following_count").value(3))
                 .andExpect(jsonPath("$.data.follower_count").value(8))
@@ -235,10 +235,9 @@ class UserModuleTest {
                 .andExpect(jsonPath("$.data.role").doesNotExist())
                 .andExpect(jsonPath("$.data.status").doesNotExist())
                 .andExpect(jsonPath("$.data.password").doesNotExist());
-        jdbc.update("UPDATE user_relation_stat SET deleted = 1 WHERE user_id = ?", id);
-        mvc.perform(get("/api/users/" + id)).andExpect(jsonPath("$.data.follower_count").value(0));
         jdbc.update("DELETE FROM user_relation_stat WHERE user_id = ?", id);
-        mvc.perform(get("/api/users/" + id)).andExpect(jsonPath("$.data.following_count").value(0));
+        mvc.perform(get("/api/users/" + id)).andExpect(jsonPath("$.data.following_count").value(0))
+                .andExpect(jsonPath("$.data.follower_count").value(0));
     }
 
     @Test

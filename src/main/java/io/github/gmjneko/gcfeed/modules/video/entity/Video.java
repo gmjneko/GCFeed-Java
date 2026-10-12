@@ -23,7 +23,6 @@ public class Video {
     private Integer status;
     private LocalDateTime publishedAt;
     private String idempotencyKey;
-    private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
@@ -52,7 +51,6 @@ public class Video {
         this.status = builder.status;
         this.publishedAt = builder.publishedAt;
         this.idempotencyKey = builder.idempotencyKey;
-        this.deleted = builder.deleted;
         this.createdAt = builder.createdAt;
         this.updatedAt = builder.updatedAt;
         this.likeCount = builder.likeCount;
@@ -136,14 +134,6 @@ public class Video {
         this.idempotencyKey = idempotencyKey;
     }
 
-    public Integer getDeleted() {
-        return deleted;
-    }
-
-    public void setDeleted(Integer deleted) {
-        this.deleted = deleted;
-    }
-
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -195,7 +185,6 @@ public class Video {
         private Integer status;
         private LocalDateTime publishedAt;
         private String idempotencyKey;
-        private Integer deleted;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
         private Integer likeCount;
@@ -244,11 +233,6 @@ public class Video {
 
         public Builder idempotencyKey(String value) {
             this.idempotencyKey = value;
-            return this;
-        }
-
-        public Builder deleted(Integer value) {
-            this.deleted = value;
             return this;
         }
 

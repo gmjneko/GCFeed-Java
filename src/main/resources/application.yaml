@@ -23,6 +23,12 @@ spring:
       password: ${CR_REDIS_PASSWORD:}
       database: ${CR_REDIS_DATABASE:0}
 
+  # 计数刷库与对账共用调度线程池，避免长时间对账阻塞刷库
+  task:
+    scheduling:
+      pool:
+        size: 2
+
 # GCFeed 业务配置
 gcfeed:
   jwt:
@@ -37,6 +43,15 @@ gcfeed:
   upload:
     # 上传文件存储根目录，相对进程工作目录
     root: ./uploads
+  scheduling:
+    enabled: true
+  # 点赞、收藏计数最终一致：请求只记 Redis 增量，定时刷入 video_stat，再定期按 interaction_action 对账
+  stat:
+    flush-interval-ms: 2000
+    flush-batch-size: 500
+    reconcile-interval-ms: 1800000
+    reconcile-initial-delay-ms: 60000
+    reconcile-batch-size: 200
 
 mybatis-plus:
   configuration:
@@ -47,9 +62,6 @@ mybatis-plus:
     banner: false
     db-config:
       id-type: auto
-      logic-delete-field: deleted
-      logic-delete-value: 1
-      logic-not-delete-value: 0
 
 # 监控端点：只暴露健康检查与 Prometheus 指标，避免泄露内部信息
 management:

@@ -100,7 +100,6 @@ public class VideoServiceImpl implements VideoService {
                 .likeCount(0)
                 .commentCount(0)
                 .favoriteCount(0)
-                .deleted(0)
                 .build());
 
         // TODO: 视频发布事务提交后发送 video.published 到 RabbitMQ。
@@ -156,7 +155,7 @@ public class VideoServiceImpl implements VideoService {
 
         int affected = videoRepository.markDeleted(videoId);
         if (affected == 0) {
-            // 处理并发删除：另一个请求已经写入墓碑时仍然返回成功。
+            // 处理并发删除：另一个请求已经把状态改为删除时仍然返回成功。
             Video latest = videoRepository.findAnyStatusById(videoId).orElse(null);
             if (latest != null && isDeleted(latest)) {
                 return;
@@ -184,8 +183,7 @@ public class VideoServiceImpl implements VideoService {
     }
 
     private boolean isDeleted(Video video) {
-        return Integer.valueOf(CommonConstant.VIDEO_STATUS_DELETED).equals(video.getStatus())
-                || Integer.valueOf(1).equals(video.getDeleted());
+        return Integer.valueOf(CommonConstant.VIDEO_STATUS_DELETED).equals(video.getStatus());
     }
 
     private void requirePositive(Long value, ErrorCode errorCode) {

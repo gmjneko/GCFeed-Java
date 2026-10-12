@@ -6,11 +6,11 @@
 --
 -- 设计约定（与 docs/02-数据库设计.md 对应）：
 --   1. 表名小写蛇形；领域主表用单数名词（account、video），事实表用业务组合名。
---   2. 所有表都有 id BIGINT 自增主键与 deleted TINYINT 逻辑删除标记
---      （0 未删除 / 1 已删除），与 application.yaml 中 MyBatis-Plus 的全局
---      logic-delete-field 配置保持一致。
---   3. 业务状态用 status 表达（如 video.status 的草稿/上线/下架/删除），
---      deleted 只用于通用行级逻辑删除，二者职责不重叠。
+--   2. 不使用 MyBatis-Plus 全局逻辑删除。有生命周期的实体用 status 表达
+--      （如 account 的正常/冻结/注销、video 的草稿/上线/下架/删除），
+--      查询需显式带上状态条件；统计表、流水表、聚合表不做软删除，需要清理时物理删除或归档。
+--   3. 仅「对用户隐藏、后台保留」且没有其他业务状态的表保留 deleted 列（如 user_message），
+--      由对应实体单独声明 @TableLogic。
 --   4. 高频计数独立成 stat 表，事实表写入与计数更新在同一事务内完成。
 --   5. 索引列顺序与查询的排序键严格对应，保证游标分页能走索引。
 --   6. 字符集统一 utf8mb4，时间列统一 DATETIME。
@@ -34,7 +34,6 @@ CREATE TABLE `account` (
     `bio`         VARCHAR(255)          DEFAULT NULL COMMENT '个人简介',
     `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1 正常 2 冻结 3 注销',
     `role`        VARCHAR(32)  NOT NULL DEFAULT 'user' COMMENT '角色：user 普通用户 / admin 管理员',
-    `deleted`     TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -50,7 +49,6 @@ CREATE TABLE `user_follow` (
     `target_user_id`  BIGINT      NOT NULL COMMENT '被关注的用户',
     `status`          TINYINT     NOT NULL DEFAULT 1 COMMENT '状态：1 关注中 2 已取关',
     `idempotency_key` VARCHAR(128)         DEFAULT NULL COMMENT '最近一次写入的幂等键',
-    `deleted`         TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -68,7 +66,6 @@ CREATE TABLE `user_relation_stat` (
     `user_id`          BIGINT   NOT NULL COMMENT '用户 ID',
     `following_count`  INT      NOT NULL DEFAULT 0 COMMENT '关注数',
     `follower_count`   INT      NOT NULL DEFAULT 0 COMMENT '粉丝数',
-    `deleted`          TINYINT  NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`user_id`),
@@ -92,7 +89,6 @@ CREATE TABLE `video` (
     `status`          TINYINT      NOT NULL DEFAULT 2 COMMENT '状态：1 草稿 2 上线 3 下架 4 删除',
     `published_at`    DATETIME              DEFAULT NULL COMMENT '发布时间，Feed 排序依据',
     `idempotency_key` VARCHAR(128)          DEFAULT NULL COMMENT '发布幂等键',
-    `deleted`         TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -111,7 +107,6 @@ CREATE TABLE `video_stat` (
     `like_count`      INT      NOT NULL DEFAULT 0 COMMENT '点赞数',
     `comment_count`   INT      NOT NULL DEFAULT 0 COMMENT '评论数',
     `favorite_count`  INT      NOT NULL DEFAULT 0 COMMENT '收藏数',
-    `deleted`         TINYINT  NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`video_id`)
@@ -126,7 +121,6 @@ CREATE TABLE `video_embedding` (
     `dimension`       INT         NOT NULL COMMENT '向量维度',
     `embedding_json`  JSON        NOT NULL COMMENT '向量内容，JSON 数组',
     `text_hash`       VARCHAR(64) NOT NULL COMMENT '文本哈希，用于判断内容是否变化',
-    `deleted`         TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -148,7 +142,6 @@ CREATE TABLE `interaction_action` (
     `action_type`     VARCHAR(16) NOT NULL COMMENT '行为类型：LIKE 点赞 / FAVORITE 收藏',
     `status`          TINYINT     NOT NULL DEFAULT 1 COMMENT '状态：1 有效 2 取消',
     `idempotency_key` VARCHAR(128)         DEFAULT NULL COMMENT '最近一次写入的幂等键',
-    `deleted`         TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -169,7 +162,6 @@ CREATE TABLE `interaction_comment` (
     `content`         VARCHAR(1000) NOT NULL COMMENT '评论内容',
     `status`          TINYINT       NOT NULL DEFAULT 1 COMMENT '状态：1 正常 2 已删除',
     `idempotency_key` VARCHAR(128)           DEFAULT NULL COMMENT '创建评论幂等键',
-    `deleted`         TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -194,7 +186,6 @@ CREATE TABLE `feed_inbox` (
     `video_id`     BIGINT   NOT NULL COMMENT '视频 ID',
     `author_id`    BIGINT   NOT NULL COMMENT '作者 ID',
     `published_at` DATETIME NOT NULL COMMENT '视频发布时间',
-    `deleted`      TINYINT  NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     -- 同一收件人不会重复收到同一视频
@@ -220,7 +211,6 @@ CREATE TABLE `video_view_events` (
     `event_type` VARCHAR(32) NOT NULL COMMENT '事件类型：exposed 曝光 / play 播放 / complete 完播 / skip 跳过',
     `watch_ms`   INT         NOT NULL DEFAULT 0 COMMENT '观看时长（毫秒）',
     `completed`  TINYINT(1)  NOT NULL DEFAULT 0 COMMENT '是否完播',
-    `deleted`    TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',
     PRIMARY KEY (`id`),
     -- 流水表不加唯一约束：重复上报本身就是有价值的行为信号，由下游聚合去重
@@ -240,7 +230,6 @@ CREATE TABLE `exposures` (
     `last_exposed_at`  DATETIME    NOT NULL COMMENT '最近曝光时间',
     `exposure_count`   INT         NOT NULL DEFAULT 1 COMMENT '累计曝光次数',
     `last_scene`       VARCHAR(32) NOT NULL COMMENT '最近一次曝光来源场景',
-    `deleted`          TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -270,7 +259,7 @@ CREATE TABLE `user_message` (
     `idempotency_key`  VARCHAR(128)           DEFAULT NULL COMMENT '接口幂等键',
     `is_read`          TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '是否已读',
     `read_at`          DATETIME               DEFAULT NULL COMMENT '已读时间',
-    `deleted`          TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
+    `deleted`          TINYINT       NOT NULL DEFAULT 0 COMMENT '用户删除：0 未删除 1 已删除，实体单独声明 @TableLogic',
     `created_at`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     -- 同一用户同一事件只生成一条消息，保证事件重复消费安全
@@ -294,7 +283,6 @@ CREATE TABLE `playback_config` (
     `network_type`  VARCHAR(16) NOT NULL COMMENT '网络类型：WiFi / 4G / 5G / DEFAULT',
     `preload_count` INT         NOT NULL COMMENT '建议预加载条数',
     `buffer_ms`     INT         NOT NULL COMMENT '目标缓冲时长（毫秒）',
-    `deleted`       TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -311,7 +299,6 @@ CREATE TABLE `playback_qos_log` (
     `stutter_count`   INT         NOT NULL DEFAULT 0 COMMENT '卡顿次数',
     `watch_ms`        INT         NOT NULL DEFAULT 0 COMMENT '观看时长（毫秒）',
     `idempotency_key` VARCHAR(128)         DEFAULT NULL COMMENT '上报幂等键',
-    `deleted`         TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '上报时间',
     PRIMARY KEY (`id`),
     -- 同一用户同一幂等键只保留一条上报，重放返回首次结果
@@ -335,7 +322,6 @@ CREATE TABLE `review_task` (
     `reason`         VARCHAR(255)          DEFAULT NULL COMMENT '审核原因',
     `assignee_id`    BIGINT                DEFAULT NULL COMMENT '分配的审核员 ID',
     `updated_by`     BIGINT                DEFAULT NULL COMMENT '最近操作人 ID',
-    `deleted`        TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -353,7 +339,6 @@ CREATE TABLE `review_decision_log` (
     `operator_id`   BIGINT                DEFAULT NULL COMMENT '操作人 ID，Agent 为 NULL',
     `decision`      VARCHAR(16)  NOT NULL COMMENT '结论：PASS / REJECT',
     `reason`        VARCHAR(255)          DEFAULT NULL COMMENT '原因',
-    `deleted`       TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     KEY `idx_task_id` (`task_id`)
@@ -366,7 +351,6 @@ CREATE TABLE `admin_config` (
     `config_key`   VARCHAR(128) NOT NULL COMMENT '配置键，全局唯一',
     `config_value` JSON         NOT NULL COMMENT '配置值',
     `updated_by`   BIGINT       NOT NULL COMMENT '最近操作人 ID',
-    `deleted`      TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -382,7 +366,6 @@ CREATE TABLE `admin_action_log` (
     `target_type` VARCHAR(32) NOT NULL COMMENT '目标类型：VIDEO / REVIEW / CONFIG',
     `target_id`   VARCHAR(64) NOT NULL COMMENT '目标 ID，用字符串兼容异构主键',
     `detail`      JSON                 DEFAULT NULL COMMENT '操作明细快照',
-    `deleted`     TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
     PRIMARY KEY (`id`),
     KEY `idx_operator_time` (`operator_id`, `created_at`),
@@ -396,7 +379,6 @@ CREATE TABLE `governance_degrade_switch` (
     `switch_key` VARCHAR(64) NOT NULL COMMENT '开关键，全局唯一',
     `enabled`    TINYINT     NOT NULL DEFAULT 0 COMMENT '是否开启降级：0 否 1 是',
     `updated_by` BIGINT      NOT NULL COMMENT '最近操作人 ID',
-    `deleted`    TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -412,7 +394,6 @@ CREATE TABLE `governance_dead_letter` (
     `retry_count` INT          NOT NULL DEFAULT 0 COMMENT '已重试次数',
     `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1 待重试 2 已完成 3 已放弃',
     `last_error`  VARCHAR(512)          DEFAULT NULL COMMENT '最近一次失败原因',
-    `deleted`     TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -427,7 +408,6 @@ CREATE TABLE `monitor_metric_point` (
     `labels`      JSON                  DEFAULT NULL COMMENT '维度标签',
     `value`       DOUBLE       NOT NULL COMMENT '指标值',
     `ts`          DATETIME     NOT NULL COMMENT '指标时间点',
-    `deleted`     TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '写入时间',
     PRIMARY KEY (`id`),
     KEY `idx_metric_ts` (`metric_name`, `ts`)
@@ -441,7 +421,6 @@ CREATE TABLE `monitor_alert_rule` (
     `metric_name`    VARCHAR(128) NOT NULL COMMENT '关联指标名',
     `condition_expr` VARCHAR(255) NOT NULL COMMENT '触发表达式',
     `enabled`        TINYINT      NOT NULL DEFAULT 1 COMMENT '是否启用',
-    `deleted`        TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -458,7 +437,6 @@ CREATE TABLE `monitor_alert_event` (
     `trigger_value` DOUBLE      NOT NULL COMMENT '触发时的指标值',
     `triggered_at`  DATETIME    NOT NULL COMMENT '触发时间',
     `resolved_at`   DATETIME             DEFAULT NULL COMMENT '恢复时间',
-    `deleted`       TINYINT     NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除 1 已删除',
     `created_at`    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     KEY `idx_status_triggered` (`status`, `triggered_at`),

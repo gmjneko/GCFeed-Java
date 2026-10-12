@@ -42,12 +42,11 @@ public class FeedRepositoryImpl implements FeedRepository {
                 .select(Video::getId, Video::getAuthorId, Video::getTitle, Video::getDescription,
                         Video::getMediaUrl, Video::getCoverUrl, Video::getPublishedAt)
                 .eq(Video::getStatus, CommonConstant.VIDEO_STATUS_PUBLISHED)
-                .eq(Video::getDeleted, 0)
                 .isNotNull(Video::getPublishedAt)
                 .orderByDesc(Video::getPublishedAt, Video::getId);
         if (cursor != null) {
             // 严格小于双键位置，避免同一发布时间下重复或漏项；外层 AND 包住整个 OR，
-            // 确保两种续页分支都受上线状态和逻辑删除条件约束。
+            // 确保两种续页分支都受上线状态条件约束。
             query.and(condition -> condition
                     .lt(Video::getPublishedAt, cursor.publishedAt())
                     .or(equalTime -> equalTime
@@ -64,11 +63,11 @@ public class FeedRepositoryImpl implements FeedRepository {
         if (authorIds.isEmpty()) {
             return Map.of();
         }
-        // 只读取公开展示字段，不把账号、密码等私有数据带入 Feed 组装链路。
+        // 只读取公开展示字段，不把账号、密码等私有数据带入 Feed 组装链路；已注销账号不展示资料。
         return userMapper.selectList(Wrappers.<User>lambdaQuery()
                         .select(User::getId, User::getNickname, User::getAvatarUrl)
                         .in(User::getId, authorIds)
-                        .eq(User::getDeleted, 0)).stream()
+                        .ne(User::getStatus, CommonConstant.USER_STATUS_CANCELLED)).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
     }
 
@@ -81,8 +80,7 @@ public class FeedRepositoryImpl implements FeedRepository {
         return statMapper.selectList(Wrappers.<VideoStat>lambdaQuery()
                         .select(VideoStat::getVideoId, VideoStat::getLikeCount,
                                 VideoStat::getCommentCount, VideoStat::getFavoriteCount)
-                        .in(VideoStat::getVideoId, videoIds)
-                        .eq(VideoStat::getDeleted, 0)).stream()
+                        .in(VideoStat::getVideoId, videoIds)).stream()
                 .collect(Collectors.toMap(VideoStat::getVideoId, Function.identity()));
     }
 
@@ -92,13 +90,12 @@ public class FeedRepositoryImpl implements FeedRepository {
         if (viewerId == null || videoIds.isEmpty()) {
             return List.of();
         }
-        // 取消态与逻辑删除记录都不生效；查询限定为当前用户、本页视频和两种按钮状态。
+        // 取消态不生效；查询限定为当前用户、本页视频和两种按钮状态。
         return actionMapper.selectList(Wrappers.<InteractionAction>lambdaQuery()
                 .select(InteractionAction::getVideoId, InteractionAction::getActionType)
                 .eq(InteractionAction::getUserId, viewerId)
                 .in(InteractionAction::getVideoId, videoIds)
                 .eq(InteractionAction::getStatus, InteractionAction.STATUS_ACTIVE)
-                .eq(InteractionAction::getDeleted, 0)
                 .in(InteractionAction::getActionType, InteractionAction.LIKE, InteractionAction.FAVORITE));
     }
 }

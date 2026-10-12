@@ -62,7 +62,7 @@ public class FeedServiceImpl implements FeedService {
         List<FeedItemVO> items = page.stream().map(video -> {
             var author = authors.get(video.getAuthorId());
             var stat = stats.get(video.getId());
-            // 关联记录缺失或被逻辑删除时仍保留视频，用空作者资料和零计数兜底。
+            // 作者已注销或统计行缺失时仍保留视频，用空作者资料和零计数兜底。
             return new FeedItemVO(video.getId(), video.getAuthorId(),
                     author == null ? null : author.getNickname(),
                     author == null ? null : author.getAvatarUrl(),

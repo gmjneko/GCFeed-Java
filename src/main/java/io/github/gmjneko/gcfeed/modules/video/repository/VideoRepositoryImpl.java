@@ -9,10 +9,13 @@ import io.github.gmjneko.gcfeed.modules.video.entity.Video;
 import io.github.gmjneko.gcfeed.modules.video.entity.VideoStat;
 import io.github.gmjneko.gcfeed.modules.video.mapper.VideoMapper;
 import io.github.gmjneko.gcfeed.modules.video.mapper.VideoStatMapper;
+import io.github.gmjneko.gcfeed.modules.video.model.VideoStatField;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoCursor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /** MyBatis-Plus 视频持久化实现，不使用 XML Mapper。 */
@@ -37,12 +40,14 @@ public class VideoRepositoryImpl implements VideoRepository {
 
     @Override
     public Optional<Video> findAnyStatusById(Long videoId) {
-        return withStat(videoMapper.selectAnyStatusById(videoId));
+        return withStat(videoMapper.selectById(videoId));
     }
 
     @Override
     public Optional<Video> findByAuthorAndIdempotencyKey(Long authorId, String idempotencyKey) {
-        return withStat(videoMapper.selectByLegacyKey(authorId, idempotencyKey));
+        return withStat(videoMapper.selectOne(Wrappers.<Video>lambdaQuery()
+                .eq(Video::getAuthorId, authorId)
+                .eq(Video::getIdempotencyKey, idempotencyKey)));
     }
 
     @Override
@@ -65,7 +70,6 @@ public class VideoRepositoryImpl implements VideoRepository {
     private LambdaQueryWrapper<Video> baseAuthorQuery(Long authorId) {
         return Wrappers.<Video>lambdaQuery()
                 .eq(Video::getAuthorId, authorId)
-                .eq(Video::getDeleted, 0)
                 .orderByDesc(Video::getPublishedAt)
                 .orderByDesc(Video::getId);
     }
@@ -102,10 +106,19 @@ public class VideoRepositoryImpl implements VideoRepository {
     public int markDeleted(Long videoId) {
         LambdaUpdateWrapper<Video> update = Wrappers.lambdaUpdate();
         update.eq(Video::getId, videoId)
-                .eq(Video::getDeleted, 0)
-                .set(Video::getStatus, CommonConstant.VIDEO_STATUS_DELETED)
-                .set(Video::getDeleted, 1);
+                .ne(Video::getStatus, CommonConstant.VIDEO_STATUS_DELETED)
+                .set(Video::getStatus, CommonConstant.VIDEO_STATUS_DELETED);
         return videoMapper.update(null, update);
+    }
+
+    @Override
+    public int addStatDeltas(Long videoId, Map<VideoStatField, Long> deltas) {
+        LambdaUpdateWrapper<VideoStat> update = Wrappers.<VideoStat>lambdaUpdate()
+                .eq(VideoStat::getVideoId, videoId)
+                .set(VideoStat::getUpdatedAt, LocalDateTime.now());
+        deltas.forEach((field, delta) -> update.setSql(
+                "%1$s = GREATEST(%1$s + {0}, 0)".formatted(field.column()), delta));
+        return videoStatMapper.update(update);
     }
 
     private Optional<Video> withStat(Video video) {

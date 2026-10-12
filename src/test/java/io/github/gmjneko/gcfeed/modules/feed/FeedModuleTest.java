@@ -130,14 +130,13 @@ class FeedModuleTest {
         video(4, 2, TIME.minusDays(1));
         video(5, 1, TIME);
         video(6, 2, TIME.plusDays(2));
-        for (int id = 7; id <= 11; id++) {
+        for (int id = 7; id <= 10; id++) {
             video(id, 1, TIME.plusDays(3));
         }
         jdbc.update("UPDATE video SET status = 1 WHERE id = 7");
         jdbc.update("UPDATE video SET status = 3 WHERE id = 8");
         jdbc.update("UPDATE video SET status = 4 WHERE id = 9");
-        jdbc.update("UPDATE video SET deleted = 1 WHERE id = 10");
-        jdbc.update("UPDATE video SET published_at = NULL WHERE id = 11");
+        jdbc.update("UPDATE video SET published_at = NULL WHERE id = 10");
 
         List<Long> allIds = new ArrayList<>();
         String cursor = "";
@@ -165,7 +164,7 @@ class FeedModuleTest {
         JsonNode first = request(get("/api/feed-items").param("limit", "2"));
         assertThat(ids(first)).containsExactly(5L, 4L);
         video(6, 1, TIME.plusSeconds(1));
-        jdbc.update("UPDATE video SET deleted = 1, status = 4 WHERE id = 4");
+        jdbc.update("UPDATE video SET status = 4 WHERE id = 4");
         JsonNode second = request(get("/api/feed-items").param("limit", "2")
                 .param("cursor", first.get("next_cursor").asText()));
         assertThat(ids(second)).containsExactly(3L, 2L);
@@ -176,13 +175,12 @@ class FeedModuleTest {
     }
 
     @Test
-    void cardsIncludePublicFieldsAndHandleMissingOrDeletedRelations() throws Exception {
+    void cardsIncludePublicFieldsAndHandleMissingOrCancelledRelations() throws Exception {
         video(1, 1, TIME);
         video(2, 2, TIME);
         video(3, 999, TIME);
-        jdbc.update("UPDATE account SET deleted = 1 WHERE id = 2");
+        jdbc.update("UPDATE account SET status = 3 WHERE id = 2");
         jdbc.update("INSERT INTO video_stat (video_id, like_count, comment_count, favorite_count) VALUES (1, 18, 4, 7)");
-        jdbc.update("INSERT INTO video_stat (video_id, like_count, deleted) VALUES (2, 99, 1)");
 
         JsonNode page = request(get("/api/feed-items"));
         assertThat(ids(page)).containsExactly(3L, 2L, 1L);
@@ -211,17 +209,17 @@ class FeedModuleTest {
     }
 
     @Test
-    void viewerActionsAreActiveUndeletedAndIsolatedByUser() throws Exception {
+    void viewerActionsAreActiveAndIsolatedByUser() throws Exception {
         for (int id = 1; id <= 4; id++) {
             video(id, 1, TIME);
         }
-        action(9, 1, "LIKE", 1, 0);
-        action(9, 1, "FAVORITE", 1, 0);
-        action(9, 2, "LIKE", 2, 0);
-        action(9, 2, "FAVORITE", 1, 1);
-        action(10, 3, "LIKE", 1, 0);
-        action(10, 3, "FAVORITE", 1, 0);
-        action(9, 4, "UNKNOWN", 1, 0);
+        action(9, 1, "LIKE", 1);
+        action(9, 1, "FAVORITE", 1);
+        action(9, 2, "LIKE", 2);
+        action(9, 2, "FAVORITE", 2);
+        action(10, 3, "LIKE", 1);
+        action(10, 3, "FAVORITE", 1);
+        action(9, 4, "UNKNOWN", 1);
 
         JsonNode viewer = request(authenticated(9));
         assertActions(item(viewer, 1), true, true);
@@ -288,9 +286,9 @@ class FeedModuleTest {
                 "/cover/" + id + ".jpg", time);
     }
 
-    private void action(long userId, long videoId, String type, int status, int deleted) {
-        jdbc.update("INSERT INTO interaction_action (user_id, video_id, action_type, status, deleted) VALUES (?, ?, ?, ?, ?)",
-                userId, videoId, type, status, deleted);
+    private void action(long userId, long videoId, String type, int status) {
+        jdbc.update("INSERT INTO interaction_action (user_id, video_id, action_type, status) VALUES (?, ?, ?, ?)",
+                userId, videoId, type, status);
     }
 
     private MockHttpServletRequestBuilder authenticated(long userId) {

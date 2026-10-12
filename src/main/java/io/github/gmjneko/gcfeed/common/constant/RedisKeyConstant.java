@@ -36,6 +36,12 @@ public final class RedisKeyConstant {
     /** 视频计数分片 Hash：{@code video:stat:counter:v1:{videoId}:shard:{0..15}}。 */
     public static final String VIDEO_STAT_COUNTER_SHARD = "video:stat:counter" + V1 + "%d:shard:%d";
 
+    /** 视频计数待刷库增量 Hash：{@code video:stat:delta:v1:{videoId}}，字段为 video_stat 列名。 */
+    public static final String VIDEO_STAT_DELTA = "video:stat:delta" + V1 + "%d";
+
+    /** 存在待刷库增量的视频 ID 集合：{@code video:stat:dirty:v1:ids}，结构为 SET。 */
+    public static final String VIDEO_STAT_DIRTY = "video:stat:dirty" + V1 + "ids";
+
     // ==================== 关注流 推拉混合 ====================
 
     /** 粉丝收件箱（普通作者推模式）：{@code feed:following:inbox:v1:{userId}}，结构为 ZSET。 */
@@ -81,6 +87,9 @@ public final class RedisKeyConstant {
 
     /** 视频计数基数 Hash TTL：24 小时。 */
     public static final long TTL_VIDEO_STAT_COUNTER_SECONDS = 24 * 60 * 60L;
+
+    /** 待刷库增量与待刷库集合 TTL：24 小时；刷库任务长时间停摆导致过期时，由对账任务按事实表纠正。 */
+    public static final long TTL_VIDEO_STAT_DELTA_SECONDS = 24 * 60 * 60L;
 
     /** 关注流收件箱/发件箱 TTL：30 天。 */
     public static final long TTL_FEED_FOLLOWING_SECONDS = 30L * 24 * 60 * 60;

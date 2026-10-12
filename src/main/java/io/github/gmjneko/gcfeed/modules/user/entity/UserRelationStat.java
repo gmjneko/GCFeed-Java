@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
  * 映射 user_relation_stat 表，主键即用户 ID。
  *
  * <p>注册时由本模块创建初始行；关注/取关的计数更新属于 relation 模块职责，
- * 模块实现后由其在事务内维护。统计行缺失或已逻辑删除时读取方按 0 处理。
+ * 模块实现后由其在事务内维护。统计行缺失时读取方按 0 处理。
  */
 @TableName("user_relation_stat")
 public class UserRelationStat {
@@ -24,8 +24,6 @@ public class UserRelationStat {
     private Integer followingCount;
 
     private Integer followerCount;
-
-    private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
@@ -41,7 +39,6 @@ public class UserRelationStat {
         this.userId = builder.userId;
         this.followingCount = builder.followingCount;
         this.followerCount = builder.followerCount;
-        this.deleted = builder.deleted;
         this.createdAt = builder.createdAt;
         this.updatedAt = builder.updatedAt;
     }
@@ -75,14 +72,6 @@ public class UserRelationStat {
         this.followerCount = followerCount;
     }
 
-    public Integer getDeleted() {
-        return deleted;
-    }
-
-    public void setDeleted(Integer deleted) {
-        this.deleted = deleted;
-    }
-
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -105,7 +94,6 @@ public class UserRelationStat {
         private Long userId;
         private Integer followingCount;
         private Integer followerCount;
-        private Integer deleted;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
 
@@ -124,11 +112,6 @@ public class UserRelationStat {
 
         public Builder followerCount(Integer followerCount) {
             this.followerCount = followerCount;
-            return this;
-        }
-
-        public Builder deleted(Integer deleted) {
-            this.deleted = deleted;
             return this;
         }
 

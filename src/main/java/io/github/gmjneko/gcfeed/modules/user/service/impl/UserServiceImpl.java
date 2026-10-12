@@ -133,8 +133,10 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserVO getProfile(Long userId) {
         requireUserId(userId);
-        // 三个单表查询均走主键或覆盖索引；deleted = 0 由全局 logic-delete 配置自动附加。
-        User user = userMapper.selectOne(Wrappers.<User>lambdaQuery().eq(User::getId, userId));
+        // 三个单表查询均走主键或覆盖索引；已注销账号视为不存在。
+        User user = userMapper.selectOne(Wrappers.<User>lambdaQuery()
+                .eq(User::getId, userId)
+                .ne(User::getStatus, CommonConstant.USER_STATUS_CANCELLED));
         if (user == null) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
@@ -166,7 +168,7 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(ErrorCode.EMPTY_PROFILE_UPDATE);
         }
         // 仅传入的字段参与 UPDATE，不能读取完整旧实体再写回，否则会覆盖其他请求的修改。
-        User.Builder patchBuilder = User.builder().id(userId);
+        User.Builder patchBuilder = User.builder();
         if (dto.nickname() != null) {
             patchBuilder.nickname(
                     required(
@@ -184,7 +186,9 @@ public class UserServiceImpl implements UserService {
         if (dto.bio() != null) {
             patchBuilder.bio(optional(dto.bio(), CommonConstant.MAX_BIO_LENGTH, ErrorCode.BIO_TOO_LONG));
         }
-        userMapper.updateById(patchBuilder.build());
+        userMapper.update(patchBuilder.build(), Wrappers.<User>lambdaUpdate()
+                .eq(User::getId, userId)
+                .ne(User::getStatus, CommonConstant.USER_STATUS_CANCELLED));
 
         // 同值更新在某些 JDBC 设置下影响行数为 0，不能仅凭影响行数判断用户不存在。
         return getProfile(userId);

@@ -29,8 +29,6 @@ public class User {
 
     private String role;
 
-    private Integer deleted;
-
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
@@ -59,7 +57,6 @@ public class User {
         this.bio = builder.bio;
         this.status = builder.status;
         this.role = builder.role;
-        this.deleted = builder.deleted;
         this.createdAt = builder.createdAt;
         this.updatedAt = builder.updatedAt;
         this.followingCount = builder.followingCount;
@@ -136,14 +133,6 @@ public class User {
         this.role = role;
     }
 
-    public Integer getDeleted() {
-        return deleted;
-    }
-
-    public void setDeleted(Integer deleted) {
-        this.deleted = deleted;
-    }
-
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -195,7 +184,6 @@ public class User {
         private String bio;
         private Integer status;
         private String role;
-        private Integer deleted;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
         private long followingCount;
@@ -242,11 +230,6 @@ public class User {
 
         public Builder role(String role) {
             this.role = role;
-            return this;
-        }
-
-        public Builder deleted(Integer deleted) {
-            this.deleted = deleted;
             return this;
         }
 
