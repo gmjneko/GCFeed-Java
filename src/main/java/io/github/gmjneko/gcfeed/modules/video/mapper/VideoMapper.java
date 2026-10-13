@@ -7,6 +7,14 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 public interface VideoMapper extends BaseMapper<Video> {
+
+    /**
+     * 按游标查询当前用户关注流的一页。
+     *
+     * <p>手写理由：相关子查询 {@code EXISTS}（见规范 §4.3 判据二）。改用「先取关注列表再拼
+     * {@code IN}」不是等价改写——关注数很大时会把整份 ID 列表塞进 SQL，且每翻一页都要先全量
+     * 拿到 IDs 才能筛选，无法像 {@code EXISTS} 这样走 {@code idx_status_published} 取 limit 条就停。
+     */
     @Select("""
             <script>
             SELECT v.id, v.author_id, v.title, v.description, v.media_url, v.cover_url, v.published_at

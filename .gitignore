@@ -4,6 +4,10 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+### 运行时产物 ###
+# 上传接口写入的媒体文件，由 gcfeed.upload.root 指定，不属于源码
+uploads/
+
 ### STS ###
 .apt_generated
 .classpath
