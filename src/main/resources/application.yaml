@@ -45,6 +45,14 @@ gcfeed:
     root: ./uploads
   scheduling:
     enabled: true
+  # 视频内容向量：本地哈希 n-gram 生成，供推荐召回使用
+  embedding:
+    # 向量维度。改维度等于换向量空间，必须同时换模型标识，否则新旧向量会互相覆盖
+    dimension: 128
+    # 补偿任务每批处理的视频数，以及单次任务最多跑多少批
+    backfill-batch-size: 200
+    backfill-max-batches: 20
+    backfill-interval-ms: 600000
   # 点赞、收藏计数最终一致：请求只记 Redis 增量，定时刷入 video_stat，再定期按 interaction_action 对账
   stat:
     flush-interval-ms: 2000

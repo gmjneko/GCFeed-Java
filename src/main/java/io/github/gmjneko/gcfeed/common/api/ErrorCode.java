@@ -93,6 +93,12 @@ public enum ErrorCode {
     LOAD_FEED_FAILED(70010, "failed to load feed"),
     LOAD_RECOMMENDATION_FAILED(70011, "failed to load recommendations"),
 
+    // ==================== 向量模块 71xxx ====================
+    INVALID_EMBEDDING_VIDEO_ID(71001, "embedding video id must be positive"),
+    EMBEDDING_DIMENSION_MISMATCH(71002, "embedding dimension mismatch"),
+    EMBEDDING_SERIALIZE_FAILED(71003, "failed to serialize embedding", 500),
+    SAVE_EMBEDDING_FAILED(71004, "failed to save embedding", 500),
+
     // ==================== 幂等 / 限流 80xxx ====================
     REQUEST_KEY_TOO_LONG(80001, "request key is too long"),
     DUPLICATE_SUBMISSION(80002, "duplicate submission within the idempotency window", 409),

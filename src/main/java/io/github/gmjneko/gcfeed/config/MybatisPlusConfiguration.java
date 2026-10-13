@@ -5,12 +5,15 @@ import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.BlockAttackInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
+import org.apache.ibatis.mapping.DatabaseIdProvider;
+import org.apache.ibatis.mapping.VendorDatabaseIdProvider;
 import org.apache.ibatis.reflection.MetaObject;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.mybatis.spring.annotation.MapperScan;
 
 import java.time.LocalDateTime;
+import java.util.Properties;
 
 /**
  * MyBatis-Plus 配置。
@@ -39,6 +42,23 @@ public class MybatisPlusConfiguration {
         interceptor.addInnerInterceptor(new BlockAttackInnerInterceptor());
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
         return interceptor;
+    }
+
+    /**
+     * 数据库厂商标识，供 {@code databaseId} 分支选择方言相关的 SQL 写法。
+     *
+     * <p>目前只有向量 upsert 用到：MySQL 8.0.20 起 {@code VALUES(col)} 废弃、要改用
+     * {@code AS new} 别名形式，而 H2 的 MySQL 兼容模式只认旧写法。测试跑 H2、生产跑 MySQL，
+     * 两边都需要能通过，所以按 {@code databaseId} 在 Mapper 里二选一。
+     */
+    @Bean
+    public DatabaseIdProvider databaseIdProvider() {
+        VendorDatabaseIdProvider provider = new VendorDatabaseIdProvider();
+        Properties properties = new Properties();
+        properties.setProperty("MySQL", "mysql");
+        properties.setProperty("H2", "h2");
+        provider.setProperties(properties);
+        return provider;
     }
 
     /**

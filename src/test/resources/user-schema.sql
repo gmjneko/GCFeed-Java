@@ -115,3 +115,19 @@ CREATE TABLE `user_follow` (
     -- 粉丝列表分页：按最近成为粉丝倒序
     KEY `idx_target_status_updated` (`target_user_id`, `status`, `updated_at`, `user_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户关注关系表';
+
+DROP TABLE IF EXISTS `video_embedding`;
+CREATE TABLE `video_embedding` (
+    `id`              BIGINT      NOT NULL AUTO_INCREMENT COMMENT '自增 ID',
+    `video_id`        BIGINT      NOT NULL COMMENT '视频 ID',
+    `model`           VARCHAR(64) NOT NULL COMMENT '向量模型标识，如 hash-ngram-v1',
+    `dimension`       INT         NOT NULL COMMENT '向量维度',
+    `embedding_json`  JSON        NOT NULL COMMENT '向量内容，JSON 数组',
+    `text_hash`       VARCHAR(64) NOT NULL COMMENT '文本哈希，用于判断内容是否变化',
+    `created_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    -- 同一视频在同一模型下只有一份向量
+    UNIQUE KEY `uk_video_model` (`video_id`, `model`),
+    KEY `idx_model_updated` (`model`, `updated_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '视频内容向量表';

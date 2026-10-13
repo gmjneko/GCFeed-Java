@@ -4,6 +4,7 @@ import io.github.gmjneko.gcfeed.common.api.ErrorCode;
 import io.github.gmjneko.gcfeed.common.annotation.Idempotent;
 import io.github.gmjneko.gcfeed.common.constant.CommonConstant;
 import io.github.gmjneko.gcfeed.common.exception.BusinessException;
+import io.github.gmjneko.gcfeed.modules.embedding.service.VideoPublishedEvent;
 import io.github.gmjneko.gcfeed.modules.video.dto.CreateVideoDTO;
 import io.github.gmjneko.gcfeed.modules.video.entity.Video;
 import io.github.gmjneko.gcfeed.modules.video.entity.VideoStat;
@@ -13,11 +14,14 @@ import io.github.gmjneko.gcfeed.modules.video.service.VideoCursorCodec;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoCursor;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoListVO;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoVO;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 视频业务规则和事务边界。
@@ -26,9 +30,11 @@ import java.util.List;
 public class VideoServiceImpl implements VideoService {
 
     private final VideoRepository videoRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public VideoServiceImpl(VideoRepository videoRepository) {
+    public VideoServiceImpl(VideoRepository videoRepository, ApplicationEventPublisher eventPublisher) {
         this.videoRepository = videoRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -101,6 +107,16 @@ public class VideoServiceImpl implements VideoService {
                 .commentCount(0)
                 .favoriteCount(0)
                 .build());
+
+        // 发布事件在事务提交后由监听器处理（见 VideoPublishedEvent 上的事务阶段约定）：
+        // 事务内发布会让回滚留下指向不存在视频的派生数据，也会把下游耗时算进事务。
+        eventPublisher.publishEvent(new VideoPublishedEvent(
+                UUID.randomUUID().toString(),
+                video.getId(),
+                video.getAuthorId(),
+                video.getTitle(),
+                video.getDescription(),
+                Instant.now()));
 
         // TODO(RabbitMQ): 用事务 Outbox 可靠发布 video.published；普通作者分发粉丝收件箱，大 V 维护发件箱。
         // TODO(RabbitMQ): 消费者实现幂等、重试和死信；禁止数据库事务提交前直接发送消息。
