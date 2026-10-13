@@ -33,9 +33,14 @@ public class CommentService {
     public CreateResult create(Long userId, Long videoId, String content, String key) {
         positive(videoId, ErrorCode.INVALID_VIDEO_ID);
         String text = content == null ? "" : content.strip();
-        if (text.isEmpty()) throw new BusinessException(ErrorCode.EMPTY_COMMENT_CONTENT);
-        if (text.codePointCount(0, text.length()) > 1000)
+
+        if (text.isEmpty()) {
+            throw new BusinessException(ErrorCode.EMPTY_COMMENT_CONTENT);
+        }
+        if (text.codePointCount(0, text.length()) > 1000) {
             throw new BusinessException(ErrorCode.COMMENT_CONTENT_TOO_LONG);
+        }
+
         String requestKey = key == null ? "" : key.strip();
         repository.lockAuthor(userId);
         // 统一锁顺序：用户 -> 视频 -> 评论；删除路径也先锁视频，再锁评论。
@@ -71,7 +76,12 @@ public class CommentService {
         List<InteractionComment> rows = repository.page(videoId, position, size + 1);
         boolean more = rows.size() > size;
         List<InteractionComment> page = more ? rows.subList(0, size) : rows;
-        var authors = repository.authors(page.stream().map(InteractionComment::getUserId).distinct().toList());
+        var authors = repository.authors(
+                page.stream()
+                        .map(InteractionComment::getUserId)
+                        .distinct()
+                        .toList()
+        );
         var items = page.stream().map(c -> view(c, authors.get(c.getUserId()), null)).toList();
         String next = page.isEmpty() ? "" : TimeIdCursorCodec.encode(new TimeIdCursor(
                 page.getLast().getCreatedAt(), page.getLast().getId()));
@@ -82,10 +92,18 @@ public class CommentService {
     public DeleteCommentVO delete(Long userId, String role, Long commentId) {
         positive(commentId, ErrorCode.INVALID_COMMENT_ID);
         InteractionComment initial = repository.find(commentId, false);
-        if (initial == null) throw new BusinessException(ErrorCode.COMMENT_NOT_FOUND);
+
+        if (initial == null) {
+            throw new BusinessException(ErrorCode.COMMENT_NOT_FOUND);
+        }
+
         Long authorId = videos.lockForInteraction(initial.getVideoId(), false);
         InteractionComment comment = repository.find(commentId, true);
-        if (comment == null) throw new BusinessException(ErrorCode.COMMENT_NOT_FOUND);
+
+        if (comment == null) {
+            throw new BusinessException(ErrorCode.COMMENT_NOT_FOUND);
+        }
+
         if (!userId.equals(comment.getUserId()) && !userId.equals(authorId) && !"admin".equals(role)) {
             throw new BusinessException(ErrorCode.COMMENT_PERMISSION_DENIED);
         }
