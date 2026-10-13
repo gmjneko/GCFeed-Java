@@ -1,6 +1,7 @@
 package io.github.gmjneko.gcfeed.config;
 
 import io.github.gmjneko.gcfeed.common.interceptor.JwtInterceptor;
+import io.github.gmjneko.gcfeed.common.interceptor.InternalTokenInterceptor;
 import io.github.gmjneko.gcfeed.common.jwt.JwtUtil;
 import io.github.gmjneko.gcfeed.common.jwt.TokenBlacklist;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,6 +32,9 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
     /** 上传文件存储根目录，与 {@code gcfeed.upload.root} 配置对应。 */
     private final String uploadRoot;
 
+    @Value("${gcfeed.internal.token}")
+    private String internalToken;
+
     public WebMvcConfiguration(JwtUtil jwtUtil, TokenBlacklist tokenBlacklist,
                                @Value("${gcfeed.upload.root:./uploads}") String uploadRoot) {
         this.jwtUtil = jwtUtil;
@@ -48,6 +52,7 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new JwtInterceptor(jwtUtil, tokenBlacklist))
                 .addPathPatterns("/api/**");
+        registry.addInterceptor(new InternalTokenInterceptor(internalToken)).addPathPatterns("/internal/**");
     }
 
     /**

@@ -53,6 +53,20 @@ gcfeed:
     backfill-batch-size: 200
     backfill-max-batches: 20
     backfill-interval-ms: 600000
+  # 推荐召回、用户画像和快照分页；以下时间窗口跨 scene 共用
+  recommendation:
+    # 首次查询召回的候选数上限（条），默认 500；配置范围 1～500，不是每页大小
+    pool-limit: 500
+    # 每次计算画像读取的最近 play / complete 流水数上限（条），默认 200
+    profile-sample-limit: 200
+    # 推荐排除近期已曝光视频的时间窗口（天），默认 7；包含窗口起点
+    exposure-window-days: 7
+    # 计算用户兴趣画像使用的观看流水时间窗口（天），默认 30
+    profile-window-days: 30
+    # 排序快照有效期（秒），默认 1800（30 分钟）；翻页不续期，过期需刷新首屏
+    snapshot-ttl-seconds: 1800
+    # 用户画像缓存有效期（秒），默认 300（5 分钟）；空画像也缓存，新行为最多延迟该时长生效
+    profile-ttl-seconds: 300
   # 点赞、收藏计数最终一致：请求只记 Redis 增量，定时刷入 video_stat，再定期按 interaction_action 对账
   stat:
     flush-interval-ms: 2000

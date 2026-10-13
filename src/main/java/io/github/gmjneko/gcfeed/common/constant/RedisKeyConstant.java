@@ -50,6 +50,14 @@ public final class RedisKeyConstant {
     /** 大 V 发件箱（拉模式）：{@code feed:following:author:v1:{authorId}}，结构为 ZSET。 */
     public static final String FEED_FOLLOWING_AUTHOR = "feed:following:author" + V1 + "%d";
 
+    // ==================== 推荐 ====================
+
+    /** 推荐排序快照：固定寿命，翻页不续期。 */
+    public static final String RECOMMENDATION_SNAPSHOT = "recommend:snapshot" + V1 + "%s";
+
+    /** 兴趣画像：包含模型空间和维度，空画像也缓存。 */
+    public static final String RECOMMENDATION_PROFILE = "recommend:profile" + V1 + "%s:%d:%d";
+
     // ==================== 热榜 ====================
 
     /** 热榜分钟桶：{@code feed:hot:minute:v1:{yyyyMMddHHmm}}，结构为 ZSET。 */

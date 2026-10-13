@@ -24,6 +24,7 @@ public class ViewEventController {
         this.exposureService = exposureService;
     }
 
+    /** 记录当前登录用户的观看流水；exposed 同步累加曝光聚合，成功返回 HTTP 201。 */
     @PostMapping
     @RequireAuth
     @ResponseStatus(HttpStatus.CREATED)

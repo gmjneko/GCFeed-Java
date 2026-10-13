@@ -38,6 +38,14 @@ public class VideoRepositoryImpl implements VideoRepository {
     }
 
     @Override
+    public java.util.Set<Long> findPublishedIds(List<Long> videoIds) {
+        if (videoIds.isEmpty()) return java.util.Set.of();
+        return videoMapper.selectList(Wrappers.<Video>lambdaQuery().select(Video::getId)
+                .in(Video::getId, videoIds).eq(Video::getStatus, CommonConstant.VIDEO_STATUS_PUBLISHED))
+                .stream().map(Video::getId).collect(java.util.stream.Collectors.toSet());
+    }
+
+    @Override
     public Optional<Video> findPublishedById(Long videoId) {
         Video video = videoMapper.selectOne(Wrappers.<Video>lambdaQuery()
                 .eq(Video::getId, videoId)

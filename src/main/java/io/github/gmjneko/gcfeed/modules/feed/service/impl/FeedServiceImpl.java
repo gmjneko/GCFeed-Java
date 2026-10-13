@@ -14,6 +14,9 @@ import io.github.gmjneko.gcfeed.modules.user.entity.User;
 import io.github.gmjneko.gcfeed.modules.video.entity.Video;
 import io.github.gmjneko.gcfeed.modules.video.entity.VideoStat;
 import org.springframework.stereotype.Service;
+import io.github.gmjneko.gcfeed.modules.exposure.model.ExposureInputNormalizer;
+import io.github.gmjneko.gcfeed.modules.recommendation.dto.QueryRecommendationDTO;
+import io.github.gmjneko.gcfeed.modules.recommendation.service.RecommendationService;
 
 import java.util.HashSet;
 import java.util.List;
@@ -25,14 +28,17 @@ import java.util.Set;
 public class FeedServiceImpl implements FeedService {
     private final FeedRepository feedRepository;
 
-    public FeedServiceImpl(FeedRepository feedRepository) {
+    private final RecommendationService recommendations;
+
+    public FeedServiceImpl(FeedRepository feedRepository, RecommendationService recommendations) {
         this.feedRepository = feedRepository;
+        this.recommendations = recommendations;
     }
 
     @Override
-    public FeedPageVO getFeed(String scene, String cursor, int limit, Long viewerId) {
+    public FeedPageVO getFeed(String scene, String cursor, int limit, Long viewerId, String requestId) {
         FeedScene actualScene = FeedScene.normalize(scene);
-        if (actualScene == FeedScene.FOLLOWING && viewerId == null) {
+        if (actualScene != FeedScene.TIMELINE && viewerId == null) {
             throw new BusinessException(ErrorCode.VIEWER_REQUIRED);
         }
         if (limit <= 0) {
@@ -40,6 +46,15 @@ public class FeedServiceImpl implements FeedService {
         }
         // 超过上限时截断；非法游标在访问数据库前直接拒绝，不能退回首页。
         int actualLimit = Math.min(limit, CommonConstant.MAX_PAGE_SIZE);
+        String actualRequestId = ExposureInputNormalizer.requestId(requestId);
+        // 推荐必须先分流，其快照游标不能送进时间线的时间/ID 解码器。
+        if (actualScene == FeedScene.RECOMMEND) {
+            var result = recommendations.recommend(new QueryRecommendationDTO(viewerId, actualScene.getValue(),
+                    actualRequestId, cursor, actualLimit));
+            List<Video> page = feedRepository.findPublishedByIds(result.candidates().stream().map(c -> c.videoId()).toList());
+            // 查询资格后仍可能并发下架，缺失卡片跳过；分页位置继续以推荐快照为准。
+            return new FeedPageVO(actualScene.getValue(), assemble(page, viewerId), result.nextCursor(), result.hasMore());
+        }
         FeedCursor position = FeedCursor.decode(cursor);
         List<Video> videos = actualScene == FeedScene.FOLLOWING
                 ? feedRepository.findFollowing(viewerId, position, actualLimit)
@@ -51,6 +66,15 @@ public class FeedServiceImpl implements FeedService {
         // 仓储多查的一条只用于判断下一页，不参与本页卡片组装或游标生成。
         boolean hasMore = videos.size() > actualLimit;
         List<Video> page = hasMore ? videos.subList(0, actualLimit) : videos;
+        List<FeedItemVO> items = assemble(page, viewerId);
+        // 非空末页也返回位置；是否继续由 has_more 决定，不依赖游标是否为空。
+        Video last = page.get(page.size() - 1);
+        String nextCursor = new FeedCursor(last.getPublishedAt(), last.getId()).encode();
+        return new FeedPageVO(actualScene.getValue(), items, nextCursor, hasMore);
+    }
+
+    private List<FeedItemVO> assemble(List<Video> page, Long viewerId) {
+        if (page.isEmpty()) return List.of();
         List<Long> videoIds = page.stream().map(Video::getId).toList();
         // 同一作者可能有多条视频，先去重再批量读取，查询次数不随页大小增长。
         Map<Long, User> authors = feedRepository.findAuthors(page.stream().map(Video::getAuthorId).distinct().toList());
@@ -70,7 +94,7 @@ public class FeedServiceImpl implements FeedService {
             }
         }
         // 批量查询返回的 Map 没有顺序，必须遍历原视频页以保持游标排序。
-        List<FeedItemVO> items = page.stream().map(video -> {
+        return page.stream().map(video -> {
             var author = authors.get(video.getAuthorId());
             var stat = stats.get(video.getId());
             // 作者已注销或统计行缺失时仍保留视频，用空作者资料和零计数兜底。
@@ -84,10 +108,6 @@ public class FeedServiceImpl implements FeedService {
                     liked.contains(video.getId()), favorited.contains(video.getId()),
                     followedAuthors.contains(video.getAuthorId()), video.getPublishedAt());
         }).toList();
-        // 非空末页也返回位置；是否继续由 has_more 决定，不依赖游标是否为空。
-        Video last = page.get(page.size() - 1);
-        String nextCursor = new FeedCursor(last.getPublishedAt(), last.getId()).encode();
-        return new FeedPageVO(actualScene.getValue(), items, nextCursor, hasMore);
     }
 
     private int valueOrZero(Integer value) {

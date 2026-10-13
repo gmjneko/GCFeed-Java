@@ -86,7 +86,7 @@ class FeedModuleTest {
             assertThat(page.get("next_cursor").asText()).isEmpty();
             assertThat(page.get("has_more").asBoolean()).isFalse();
         }
-        for (String scene : List.of("hot", "recommend", "unknown")) {
+        for (String scene : List.of("hot", "unknown")) {
             mvc.perform(get("/api/feed-items").param("scene", scene))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(70003));
         }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVideoComments } from "./useVideoComments";
+import { createViewObservation } from "./viewObservation";
 
 const TOKEN_KEY = "gcfeed.accessToken";
 const USER_KEY = "gcfeed.user";
@@ -392,6 +393,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [feedState, setFeedState] = useState("loading");
   const [feedError, setFeedError] = useState("");
+  const [recommendationExpired, setRecommendationExpired] = useState(false);
   const [nextCursor, setNextCursor] = useState("");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -405,7 +407,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
   const swipeRef = useRef(null);
   const loadingMoreRef = useRef(false);
   const feedRequestIDRef = useRef("");
-  const exposedRef = useRef(new Set());
+  const observationRef = useRef(null);
   const preloadedVideoRef = useRef(new Set());
   const currentFeedScene = FEED_SCENES.find((scene) => scene.key === feedScene) || FEED_SCENES[0];
 
@@ -450,7 +452,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
       };
     }
 
-    exposedRef.current = new Set();
+    setRecommendationExpired(false);
     loadingMoreRef.current = false;
     setFeedRequestID(requestID);
     setNextCursor("");
@@ -494,7 +496,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
   }, [currentFeedScene.label, feedScene, session.token, feedScope]);
 
   const loadMoreFeed = useCallback(() => {
-    if (loadingMoreRef.current || feedState !== "ready" || !hasMore || !nextCursor || requiresAuthFeed(feedScene) && !session.token) {
+    if (recommendationExpired || loadingMoreRef.current || feedState !== "ready" || !hasMore || !nextCursor || requiresAuthFeed(feedScene) && !session.token) {
       return;
     }
 
@@ -515,6 +517,12 @@ function FeedPage({ feedScene, session, onNavigate }) {
       })
       .catch((error) => {
         if (!feedMounted.current || feedScopeRef.current !== feedScope || feedRequestIDRef.current !== requestID) return;
+        // 过期游标不能重试续页；保留当前视频和已加载条目，交给用户主动刷新首屏。
+        if (error.status === 410 && error.code === 70013) {
+          setRecommendationExpired(true);
+          setFeedError("推荐列表已过期，刷新后继续观看");
+          return;
+        }
         setFeedError(error.message || "加载更多失败");
         if (error.status === 401 && requiresAuthFeed(feedScene)) {
           session.clearAuth();
@@ -526,7 +534,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
         loadingMoreRef.current = false;
         setLoadingMore(false);
       });
-  }, [feedRequestID, feedScene, feedState, hasMore, nextCursor, onNavigate, session, feedScope]);
+  }, [feedRequestID, feedScene, feedState, hasMore, nextCursor, onNavigate, session, feedScope, recommendationExpired]);
 
 
 
@@ -596,31 +604,51 @@ function FeedPage({ feedScene, session, onNavigate }) {
     setItems((state) => state.map((item) => (item.video_id === videoID ? { ...item, ...patch } : item)));
   }, []);
 
+  // 观察由 FeedPage 持有，滑动层的临时挂载/暂停不代表开始或结束一次新观看。
+  const observationScene = current?.feed_scene || feedScene;
+  const observationRequestID = current?.request_id || feedRequestID;
   useEffect(() => {
-    if (!current || feedState !== "ready" || !session.token) return;
-    const scene = current.feed_scene || feedScene;
-    const requestID = current.request_id || feedRequestID;
-    const exposureKey = `${scene}:${requestID}:${current.video_id}`;
-    if (!requestID || exposedRef.current.has(exposureKey)) return;
-    exposedRef.current.add(exposureKey);
-    apiRequest("/api/video-view-events", {
-      method: "POST",
-      token: session.token,
-      body: {
-        video_id: current.video_id,
-        scene,
-        request_id: requestID,
-        event_type: "exposed",
-        watch_ms: 0,
-        completed: false
-      }
-    }).catch((error) => {
-      if (error.status === 401 && requiresAuthFeed(feedScene)) {
-        session.clearAuth();
-        onNavigate("/auth");
-      }
-    });
-  }, [current, feedRequestID, feedScene, feedState, onNavigate, session]);
+    const existing = observationRef.current;
+    const key = feedState === "ready" && session.token && current?.video_id
+      ? `${session.token}:${observationScene}:${observationRequestID}:${current.video_id}` : null;
+    // 同标识重新挂载取消延迟清理；标识改变才结束旧观察，允许离开后再次观看同一视频。
+    if (existing?.timer) clearTimeout(existing.timer);
+    if (existing && existing.key !== key) {
+      existing.tracker.finish();
+      observationRef.current = null;
+    }
+    if (!key) return undefined;
+    if (!observationRef.current) {
+      // 与视频上下文一起捕获身份，旧观察退出时不使用已切换账号的新 token。
+      const token = session.token;
+      const tracker = createViewObservation({
+        video_id: current.video_id, scene: observationScene, request_id: observationRequestID
+      }, (body, keepalive) => apiRequest("/api/video-view-events", { method: "POST", token, body, keepalive }));
+      tracker.setVisible(!document.hidden);
+      observationRef.current = { key, tracker, timer: null };
+    }
+    const observation = observationRef.current;
+    const visibility = () => observation.tracker.setVisible(!document.hidden);
+    const leaving = () => observation.tracker.finish();
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("pagehide", leaving);
+    return () => {
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("pagehide", leaving);
+      // 延迟一轮结束，React StrictMode 的立即清理/重新挂载可复用同一次观察。
+      observation.timer = setTimeout(() => {
+        observation.tracker.finish();
+        if (observationRef.current === observation) observationRef.current = null;
+      }, 0);
+    };
+  }, [current?.video_id, observationScene, observationRequestID, feedState, session.token]);
+
+  const reportViewPlayback = useCallback((item, kind) => {
+    const observation = observationRef.current;
+    const key = `${session.token}:${item.feed_scene || feedScene}:${item.request_id || feedRequestID}:${item.video_id}`;
+    // 预加载层或旧视频的回调只能影响匹配的观察，不能污染当前视频的计时。
+    if (observation?.key === key) observation.tracker.signal(kind);
+  }, [session.token, feedScene, feedRequestID]);
 
   useEffect(() => {
     if (!current || feedState !== "ready" || !session.token) return undefined;
@@ -983,6 +1011,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
                     onFavorite={setFavorite}
                     onFollow={setFollow}
                     onPlaybackQoS={reportPlaybackQoS}
+                  onViewPlayback={reportViewPlayback}
                     onOpenAuthor={(author) => openPublicProfile(author, onNavigate)}
                     followError={followError}
                   />
@@ -1002,6 +1031,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
                   onFavorite={setFavorite}
                   onFollow={setFollow}
                   onPlaybackQoS={reportPlaybackQoS}
+                  onViewPlayback={reportViewPlayback}
                   onOpenAuthor={(author) => openPublicProfile(author, onNavigate)}
                   followError={followError}
                 />
@@ -1021,6 +1051,7 @@ function FeedPage({ feedScene, session, onNavigate }) {
                     onFavorite={setFavorite}
                     onFollow={setFollow}
                     onPlaybackQoS={reportPlaybackQoS}
+                  onViewPlayback={reportViewPlayback}
                     onOpenAuthor={(author) => openPublicProfile(author, onNavigate)}
                     followError={followError}
                   />
@@ -1030,11 +1061,11 @@ function FeedPage({ feedScene, session, onNavigate }) {
           </div>
         )}
         {feedState === "ready" && feedError && <div className="feed-loading-pill">
-          {feedError} <button type="button" onClick={loadMoreFeed}>重试</button>
+          {feedError} <button type="button" onClick={recommendationExpired ? loadFeed : loadMoreFeed}>{recommendationExpired ? "刷新推荐" : "重试"}</button>
         </div>}
         {feedState === "ready" && loadingMore && <div className="feed-loading-pill">加载中</div>}
         {feedState === "ready" && items.length > 0 && !hasMore && index === items.length - 1 && (
-          <div className="feed-loading-pill">已到末尾</div>
+          <div className="feed-loading-pill">已到末尾 {feedScene === "recommend" && !recommendationExpired && <button type="button" onClick={loadFeed}>换一批</button>}</div>
         )}
       </section>
       <CommentPanel
@@ -1086,12 +1117,15 @@ function VideoStage({
   onFavorite,
   onFollow,
   onPlaybackQoS,
+  onViewPlayback,
   onOpenAuthor
 }) {
   const cover = item.cover_url || image.stage;
   const media = item.media_url || cover;
   const showVideo = isVideoSource(media);
   const videoRef = useRef(null);
+  // 受控循环归零也触发 seeking/seeked，需与用户跳转区分，避免把下一轮完整播放判为跳过。
+  const restartingRef = useRef(false);
   const itemRef = useRef(item);
   const qosRef = useRef(createVideoQoSState(item.video_id));
 
@@ -1147,6 +1181,7 @@ function VideoStage({
   }
 
   function handlePlaying() {
+    if (active) onViewPlayback?.(itemRef.current, "playing");
     const state = qosRef.current;
     if (!active || !state) return;
     if (!state.loadStartedAt) {
@@ -1158,6 +1193,7 @@ function VideoStage({
   }
 
   function handleWaiting() {
+    if (active) onViewPlayback?.(itemRef.current, "waiting");
     const state = qosRef.current;
     if (!active || !state) return;
     state.stutterCount += 1;
@@ -1175,14 +1211,25 @@ function VideoStage({
           poster={cover}
           autoPlay={active}
           muted
-          loop
           playsInline
           preload={active ? "metadata" : "none"}
           onLoadedData={handleLoadedData}
           onPlaying={handlePlaying}
           onWaiting={handleWaiting}
-          onPause={flushQoS}
-          onEnded={flushQoS}
+          onPause={() => { onViewPlayback?.(itemRef.current, "pause"); flushQoS(); }}
+          onStalled={() => { if (active) onViewPlayback?.(itemRef.current, "stalled"); }}
+          onSeeking={() => { if (active && !restartingRef.current) onViewPlayback?.(itemRef.current, "seeking"); }}
+          onSeeked={() => { if (active && !restartingRef.current) onViewPlayback?.(itemRef.current, "seeked"); restartingRef.current = false; }}
+          onEnded={() => {
+            if (active) onViewPlayback?.(itemRef.current, "ended");
+            flushQoS();
+            // 用 ended 后重播保留循环体验，让首轮完播可被观察；原生 loop 会跳过 ended。
+            if (active && videoRef.current) {
+              restartingRef.current = true;
+              videoRef.current.currentTime = 0;
+              videoRef.current.play()?.catch(() => {});
+            }
+          }}
         />
       ) : (
         <img className="stage-media portrait-media" src={media} alt="" />
@@ -2620,13 +2667,16 @@ async function apiRequest(path, options = {}) {
   const response = await fetch(path, {
     method: options.method || "GET",
     headers,
-    body: options.body ? JSON.stringify(options.body) : undefined
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    keepalive: Boolean(options.keepalive)
   });
 
   if (!response.ok) {
     let message = "请求失败";
+    let code;
     try {
       const data = await response.json();
+      code = data.code;
       if (data.error) message = data.error;
       if (data.message) message = data.message;
     } catch {
@@ -2634,6 +2684,7 @@ async function apiRequest(path, options = {}) {
     }
     const error = new Error(message);
     error.status = response.status;
+    error.code = code;
     throw error;
   }
 

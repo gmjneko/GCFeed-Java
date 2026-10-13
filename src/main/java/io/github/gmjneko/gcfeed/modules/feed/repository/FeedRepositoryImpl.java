@@ -41,6 +41,18 @@ public class FeedRepositoryImpl implements FeedRepository {
     }
 
     @Override
+    public List<Video> findPublishedByIds(List<Long> videoIds) {
+        if (videoIds.isEmpty()) return List.of();
+        Map<Long, Video> videos = videoMapper.selectList(Wrappers.<Video>lambdaQuery()
+                .select(Video::getId, Video::getAuthorId, Video::getTitle, Video::getDescription,
+                        Video::getMediaUrl, Video::getCoverUrl, Video::getPublishedAt)
+                .in(Video::getId, videoIds).eq(Video::getStatus, CommonConstant.VIDEO_STATUS_PUBLISHED)
+                .isNotNull(Video::getPublishedAt)).stream().collect(Collectors.toMap(Video::getId, Function.identity()));
+        // SQL IN 不保证顺序，必须按推荐页给出的 ID 装配，不能用数据库返回顺序重排卡片。
+        return videoIds.stream().map(videos::get).filter(java.util.Objects::nonNull).toList();
+    }
+
+    @Override
     public List<Video> findFollowing(Long viewerId, FeedCursor cursor, int limit) {
         return videoMapper.followingPage(viewerId, cursor, limit + 1);
     }
