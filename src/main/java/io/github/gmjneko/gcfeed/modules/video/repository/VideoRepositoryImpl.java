@@ -31,6 +31,13 @@ public class VideoRepositoryImpl implements VideoRepository {
     }
 
     @Override
+    public boolean existsPublished(Long videoId) {
+        return videoMapper.exists(Wrappers.<Video>lambdaQuery()
+                .eq(Video::getId, videoId)
+                .eq(Video::getStatus, CommonConstant.VIDEO_STATUS_PUBLISHED));
+    }
+
+    @Override
     public Optional<Video> findPublishedById(Long videoId) {
         Video video = videoMapper.selectOne(Wrappers.<Video>lambdaQuery()
                 .eq(Video::getId, videoId)

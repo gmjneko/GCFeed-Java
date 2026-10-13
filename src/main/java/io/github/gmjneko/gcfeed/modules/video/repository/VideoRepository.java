@@ -16,6 +16,9 @@ import java.util.Optional;
  */
 public interface VideoRepository {
 
+    /** 只判断视频是否上线，不读取视频详情与互动统计。 */
+    boolean existsPublished(Long videoId);
+
     Optional<Video> findPublishedById(Long videoId);
 
     Optional<Video> findAnyStatusById(Long videoId);

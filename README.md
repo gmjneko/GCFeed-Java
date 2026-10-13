@@ -14,6 +14,10 @@ user 模块已实现注册、登录、登出、当前用户资料、公开资料
 
 本轮不需要 RabbitMQ。评论和关系统计同步事务更新；视频分发、通知、热榜更新在实际状态变化处保留 `TODO(RabbitMQ)`。详细边界与验证见 [互动与关注实现](docs/impl/01-互动与关注实现.md)。
 
+视频内容向量已支持发布后生成、原子覆盖和定时补偿，详见 [向量模块实现](docs/impl/02-向量模块实现.md)。
+
+exposure 模块已实现 `POST /api/video-view-events`：登录用户上报 `exposed` / `play` / `complete` / `skip`，每次保存一条流水，只有 `exposed` 在同一事务内原子累加曝光聚合。重复请求仍记录新行为；聚合失败时流水同步回滚。内部曝光接口留到 recommendation 模块，详见 [曝光模块实现](docs/impl/03-曝光模块实现.md)。
+
 ## 快速开始
 
 ```bash

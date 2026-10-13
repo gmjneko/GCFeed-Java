@@ -131,3 +131,41 @@ CREATE TABLE `video_embedding` (
     UNIQUE KEY `uk_video_model` (`video_id`, `model`),
     KEY `idx_model_updated` (`model`, `updated_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '视频内容向量表';
+
+DROP TABLE IF EXISTS `video_view_events`;
+CREATE TABLE `video_view_events` (
+    `id`         BIGINT       NOT NULL AUTO_INCREMENT,
+    `user_id`    BIGINT       NOT NULL,
+    `video_id`   BIGINT       NOT NULL,
+    -- H2 按 UTF-16 单元计数，MySQL utf8mb4 按 Unicode 字符计数；Service 仍校验 32/64 字符。
+    `scene`      VARCHAR(64)  NOT NULL,
+    `request_id` VARCHAR(128) DEFAULT NULL,
+    `event_type` VARCHAR(32)  NOT NULL,
+    `watch_ms`   INT          NOT NULL DEFAULT 0,
+    `completed`  TINYINT(1)   NOT NULL DEFAULT 0,
+    `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- H2 的索引名在 schema 内唯一，添加表前缀避免与评论索引重名；列与生产索引一致。
+    KEY `idx_view_event_user_created` (`user_id`, `created_at`),
+    KEY `idx_view_event_video_created` (`video_id`, `created_at`),
+    KEY `idx_view_event_user_scene_created` (`user_id`, `scene`, `created_at`),
+    KEY `idx_view_event_request_event` (`request_id`, `event_type`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '视频观看行为流水表';
+
+DROP TABLE IF EXISTS `exposures`;
+CREATE TABLE `exposures` (
+    `id`               BIGINT      NOT NULL AUTO_INCREMENT,
+    `user_id`          BIGINT      NOT NULL,
+    `video_id`         BIGINT      NOT NULL,
+    `first_exposed_at`  DATETIME    NOT NULL,
+    `last_exposed_at`   DATETIME    NOT NULL,
+    `exposure_count`    INT         NOT NULL DEFAULT 1,
+    -- 与观看流水的 scene 一样，测试列为 H2 的 UTF-16 单元适配。
+    `last_scene`       VARCHAR(64) NOT NULL,
+    `created_at`       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_video` (`user_id`, `video_id`),
+    KEY `idx_user_last_exposed` (`user_id`, `last_exposed_at`),
+    KEY `idx_video_last_exposed` (`video_id`, `last_exposed_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户曝光聚合表';

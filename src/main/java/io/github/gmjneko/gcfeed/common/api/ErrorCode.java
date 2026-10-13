@@ -92,6 +92,7 @@ public enum ErrorCode {
     REQUEST_ID_TOO_LONG(70009, "request id is too long"),
     LOAD_FEED_FAILED(70010, "failed to load feed"),
     LOAD_RECOMMENDATION_FAILED(70011, "failed to load recommendations"),
+    SAVE_VIEW_EVENT_FAILED(70012, "failed to save view event", 500),
 
     // ==================== 向量模块 71xxx ====================
     INVALID_EMBEDDING_VIDEO_ID(71001, "embedding video id must be positive"),

@@ -47,7 +47,7 @@ public class MybatisPlusConfiguration {
     /**
      * 数据库厂商标识，供 {@code databaseId} 分支选择方言相关的 SQL 写法。
      *
-     * <p>目前只有向量 upsert 用到：MySQL 8.0.20 起 {@code VALUES(col)} 废弃、要改用
+     * <p>向量与曝光 upsert 共用：MySQL 8.0.20 起 {@code VALUES(col)} 废弃、要改用
      * {@code AS new} 别名形式，而 H2 的 MySQL 兼容模式只认旧写法。测试跑 H2、生产跑 MySQL，
      * 两边都需要能通过，所以按 {@code databaseId} 在 Mapper 里二选一。
      */
