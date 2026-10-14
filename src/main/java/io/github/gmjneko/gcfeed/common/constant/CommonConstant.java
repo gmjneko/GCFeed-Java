@@ -56,4 +56,12 @@ public final class CommonConstant {
     public static final int MAX_MESSAGE_EVENT_ID_LENGTH = 64;
     public static final int MAX_MESSAGE_ACTOR_NICKNAME_LENGTH = 128;
 
+    public static final int MAX_PLATFORM_LENGTH = 16;
+    public static final int MAX_NETWORK_TYPE_LENGTH = 16;
+    public static final String PLATFORM_WEB = "Web";
+    public static final String NETWORK_DEFAULT = "DEFAULT";
+    public static final int DEFAULT_PRELOAD_COUNT = 3;
+    public static final int MAX_PRELOAD_COUNT = 10;
+    public static final int DEFAULT_BUFFER_MS = 1200;
+
 }

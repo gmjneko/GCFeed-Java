@@ -86,6 +86,9 @@ public enum ErrorCode {
     INVALID_FIRST_FRAME_MS(60003, "first frame ms must be non-negative"),
     INVALID_STUTTER_COUNT(60004, "stutter count must be non-negative"),
     INVALID_WATCH_MS(60005, "watch ms must be non-negative"),
+    PLAYBACK_IDEMPOTENCY_KEY_TOO_LONG(60006, "idempotency key is too long"),
+    LOAD_PLAYBACK_FAILED(60007, "failed to load playback data", 500),
+    SAVE_QOS_FAILED(60008, "failed to save playback qos report", 500),
 
     // ==================== Feed / 推荐 / 曝光模块 70xxx ====================
     INVALID_LIMIT(70001, "limit must be positive"),

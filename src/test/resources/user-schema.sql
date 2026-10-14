@@ -193,3 +193,33 @@ CREATE TABLE `user_message` (
     KEY `idx_message_user_read_created` (`user_id`, `is_read`, `created_at`),
     KEY `idx_message_user_created` (`user_id`, `created_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '站内通知表';
+
+DROP TABLE IF EXISTS `playback_config`;
+CREATE TABLE `playback_config` (
+    `id`            BIGINT      NOT NULL AUTO_INCREMENT,
+    `platform`      VARCHAR(16) NOT NULL,
+    `network_type`  VARCHAR(16) NOT NULL,
+    `preload_count` INT         NOT NULL,
+    `buffer_ms`     INT         NOT NULL,
+    `created_at`    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_playback_platform_network` (`platform`, `network_type`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '播放策略配置表';
+
+DROP TABLE IF EXISTS `playback_qos_log`;
+CREATE TABLE `playback_qos_log` (
+    `id`              BIGINT       NOT NULL AUTO_INCREMENT,
+    `user_id`         BIGINT       NOT NULL,
+    `video_id`        BIGINT       NOT NULL,
+    `first_frame_ms`  INT                   DEFAULT NULL,
+    `stutter_count`   INT          NOT NULL DEFAULT 0,
+    `watch_ms`        INT          NOT NULL DEFAULT 0,
+    `idempotency_key` VARCHAR(128)          DEFAULT NULL,
+    `created_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- 评论表已占用 uk_user_idempotency，H2 要求索引名在 schema 内唯一。
+    UNIQUE KEY `uk_qos_user_idempotency` (`user_id`, `idempotency_key`),
+    KEY `idx_qos_video_time` (`video_id`, `created_at`),
+    KEY `idx_qos_user_video_time` (`user_id`, `video_id`, `created_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '播放质量流水表';
