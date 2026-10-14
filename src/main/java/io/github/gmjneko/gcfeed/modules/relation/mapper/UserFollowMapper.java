@@ -55,4 +55,13 @@ public interface UserFollowMapper extends BaseMapper<UserFollow> {
     List<RelationUserVO> followers(@Param("viewerId") Long viewerId, @Param("cursor") TimeIdCursor cursor,
                                    @Param("fetchLimit") int fetchLimit);
 
+    /** 当前用户仍关注、且粉丝数达到阈值的作者。关注流只拉这些作者的发件箱。 */
+    @Select("""
+            SELECT f.target_user_id
+            FROM user_follow f
+            JOIN user_relation_stat s ON s.user_id = f.target_user_id
+            WHERE f.user_id = #{viewerId} AND f.status = 1 AND s.follower_count >= #{threshold}
+            """)
+    List<Long> bigVAuthors(@Param("viewerId") Long viewerId, @Param("threshold") int threshold);
+
 }

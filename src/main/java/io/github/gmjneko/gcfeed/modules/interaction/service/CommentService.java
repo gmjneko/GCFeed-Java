@@ -82,7 +82,7 @@ public class CommentService {
         repository.changeCount(videoId, 1);
         notifyComment(userId, authorId, comment.getId(), text);
         recordHotAfterCommit(videoId, HotRanking.COMMENT_WEIGHT);
-        // TODO(RabbitMQ): 事务 Outbox 记录 comment.created，提交后可靠发布；消费端幂等、重试、死信。
+        // 评论事实、计数、热度和通知都已同步完成，不再投递 comment.created。
         return new CreateResult(view(comment, repository.count(videoId)), true);
     }
 
@@ -129,7 +129,7 @@ public class CommentService {
         if (repository.delete(commentId)) {
             repository.changeCount(comment.getVideoId(), -1);
             recordHotAfterCommit(comment.getVideoId(), -HotRanking.COMMENT_WEIGHT);
-            // TODO(RabbitMQ): 事务 Outbox 记录 comment.deleted，消费端幂等、重试及死信。
+            // 删除已经同步更新计数和热度，不再投递 comment.deleted。
         }
         return new DeleteCommentVO(commentId, 2, repository.count(comment.getVideoId()));
     }

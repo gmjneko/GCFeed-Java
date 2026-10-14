@@ -84,6 +84,31 @@ public class RelationRepository {
         return stats.selectById(id);
     }
 
+    public int followerCount(Long authorId) {
+        UserRelationStat stat = stats.selectById(authorId);
+        return stat == null || stat.getFollowerCount() == null ? 0 : stat.getFollowerCount();
+    }
+
+    public List<Long> followerIdsAfter(Long authorId, long afterUserId, int limit) {
+        return follows.selectList(Wrappers.<UserFollow>lambdaQuery()
+                        .select(UserFollow::getUserId)
+                        .eq(UserFollow::getTargetUserId, authorId)
+                        .eq(UserFollow::getStatus, 1)
+                        .gt(UserFollow::getUserId, afterUserId)
+                        .orderByAsc(UserFollow::getUserId)
+                        .last("LIMIT " + limit))
+                .stream().map(UserFollow::getUserId).toList();
+    }
+
+    public List<Long> bigVAuthorIds(Long viewerId, int threshold) {
+        return follows.bigVAuthors(viewerId, threshold);
+    }
+
+    public boolean following(Long userId, Long targetId) {
+        UserFollow relation = find(userId, targetId);
+        return relation != null && relation.getStatus() != null && relation.getStatus() == 1;
+    }
+
     public List<RelationUserVO> page(Long userId, boolean outgoing, TimeIdCursor cursor, int fetchLimit) {
         return outgoing ? follows.following(userId, cursor, fetchLimit) : follows.followers(userId, cursor, fetchLimit);
     }

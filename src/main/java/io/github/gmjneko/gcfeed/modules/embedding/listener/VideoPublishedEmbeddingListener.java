@@ -4,6 +4,7 @@ import io.github.gmjneko.gcfeed.modules.embedding.service.EmbeddingService;
 import io.github.gmjneko.gcfeed.modules.embedding.service.VideoPublishedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -21,6 +22,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * <p>接入 RabbitMQ 后，这个类改成消息监听器即可——事件类型和 Service 都不动。
  */
 @Component
+@ConditionalOnProperty(name = "gcfeed.rabbitmq.enabled", havingValue = "false", matchIfMissing = true)
 public class VideoPublishedEmbeddingListener {
 
     private static final Logger log = LoggerFactory.getLogger(VideoPublishedEmbeddingListener.class);

@@ -194,6 +194,33 @@ CREATE TABLE `user_message` (
     KEY `idx_message_user_created` (`user_id`, `created_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '站内通知表';
 
+DROP TABLE IF EXISTS `event_outbox`;
+CREATE TABLE `event_outbox` (
+    `id`         BIGINT      NOT NULL AUTO_INCREMENT,
+    `event_id`   VARCHAR(64) NOT NULL,
+    `event_type` VARCHAR(64) NOT NULL,
+    `payload`    JSON        NOT NULL,
+    `status`     TINYINT     NOT NULL DEFAULT 0,
+    `created_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_outbox_event_id` (`event_id`),
+    KEY `idx_outbox_status_id` (`status`, `id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '待发送事件表';
+
+DROP TABLE IF EXISTS `governance_dead_letter`;
+CREATE TABLE `governance_dead_letter` (
+    `id`          BIGINT       NOT NULL AUTO_INCREMENT,
+    `task_type`   VARCHAR(64)  NOT NULL,
+    `payload`     JSON         NOT NULL,
+    `retry_count` INT          NOT NULL DEFAULT 0,
+    `status`      TINYINT      NOT NULL DEFAULT 1,
+    `last_error`  VARCHAR(512)          DEFAULT NULL,
+    `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_dead_letter_status_updated` (`status`, `updated_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '死信任务表';
+
 DROP TABLE IF EXISTS `playback_config`;
 CREATE TABLE `playback_config` (
     `id`            BIGINT      NOT NULL AUTO_INCREMENT,

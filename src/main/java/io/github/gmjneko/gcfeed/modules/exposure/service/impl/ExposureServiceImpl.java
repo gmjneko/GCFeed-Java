@@ -114,7 +114,7 @@ public class ExposureServiceImpl implements ExposureService {
             aggregate = ExposureVO.from(exposureRepository.findByUserAndVideo(userId, videoId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.SAVE_VIEW_EVENT_FAILED)));
         }
-        // TODO(RabbitMQ): 当前推荐画像按需查表，明确有消费者后再设计提交后投递。
+        // 推荐画像按观看流水现算，没有单独的消费者，不投递 exposure.view_event_recorded。
         return new RecordViewEventVO(ViewEventVO.from(event), aggregate);
     }
 

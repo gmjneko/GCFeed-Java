@@ -196,6 +196,20 @@ CREATE TABLE `feed_inbox` (
     KEY `idx_author` (`author_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '关注流收件箱表';
 
+-- 事务内记录待发送事件。提交后投递 RabbitMQ，失败由定时任务补发。
+DROP TABLE IF EXISTS `event_outbox`;
+CREATE TABLE `event_outbox` (
+    `id`         BIGINT      NOT NULL AUTO_INCREMENT COMMENT '自增 ID',
+    `event_id`   VARCHAR(64) NOT NULL COMMENT '事件 ID，全局唯一',
+    `event_type` VARCHAR(64) NOT NULL COMMENT '事件类型',
+    `payload`    JSON        NOT NULL COMMENT '消息体',
+    `status`     TINYINT     NOT NULL DEFAULT 0 COMMENT '0 待发送 1 已发送',
+    `created_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_outbox_event_id` (`event_id`),
+    KEY `idx_outbox_status_id` (`status`, `id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '待发送事件表';
+
 -- =============================================================================
 -- 五、曝光与推荐
 -- =============================================================================

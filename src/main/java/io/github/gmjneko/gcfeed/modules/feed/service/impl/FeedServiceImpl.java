@@ -9,6 +9,8 @@ import io.github.gmjneko.gcfeed.modules.feed.cache.CachedVideoStat;
 import io.github.gmjneko.gcfeed.modules.feed.cache.FeedCache;
 import io.github.gmjneko.gcfeed.modules.feed.cache.FeedCacheKeys;
 import io.github.gmjneko.gcfeed.modules.feed.cache.FeedCardCache;
+import io.github.gmjneko.gcfeed.modules.feed.following.FollowingIndex;
+import io.github.gmjneko.gcfeed.modules.feed.following.FollowingItem;
 import io.github.gmjneko.gcfeed.modules.feed.hot.HotRanking;
 import io.github.gmjneko.gcfeed.modules.feed.hot.HotWindows;
 import io.github.gmjneko.gcfeed.modules.feed.model.FeedCursor;
@@ -40,6 +42,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /** 校验请求、按场景取页，再用卡片和计数缓存组装。点赞和关注状态每次按当前用户查询。 */
@@ -52,17 +55,20 @@ public class FeedServiceImpl implements FeedService {
     private final RecommendationService recommendations;
     private final FeedCache feedCache;
     private final HotRanking hotRanking;
+    private final FollowingIndex followingIndex;
     private final VideoStatDeltaBuffer statBuffer;
     private final Clock clock;
     private final JsonMapper json;
     private final SingleFlight<TimelineLoad> timelineLoads = new SingleFlight<>();
 
     public FeedServiceImpl(FeedRepository feedRepository, RecommendationService recommendations, FeedCache feedCache,
-                           HotRanking hotRanking, VideoStatDeltaBuffer statBuffer, Clock clock, JsonMapper json) {
+                           HotRanking hotRanking, FollowingIndex followingIndex, VideoStatDeltaBuffer statBuffer,
+                           Clock clock, JsonMapper json) {
         this.feedRepository = feedRepository;
         this.recommendations = recommendations;
         this.feedCache = feedCache;
         this.hotRanking = hotRanking;
+        this.followingIndex = followingIndex;
         this.statBuffer = statBuffer;
         this.clock = clock;
         this.json = json;
@@ -91,6 +97,10 @@ public class FeedServiceImpl implements FeedService {
         }
         if (actualScene == FeedScene.FOLLOWING) {
             FeedCursor position = FeedCursor.decode(cursor);
+            Optional<List<FollowingItem>> indexed = followingIndex.page(viewerId, position, actualLimit + 1);
+            if (indexed.isPresent()) {
+                return followingFromIndex(indexed.get(), actualLimit, viewerId);
+            }
             List<Video> videos = feedRepository.findFollowing(viewerId, position, actualLimit);
             return timePage(FeedScene.FOLLOWING, videos, actualLimit, viewerId);
         }
@@ -163,6 +173,21 @@ public class FeedServiceImpl implements FeedService {
     private FeedPageVO hotFromDatabase(HotScoreCursor cursor, int limit, Long viewerId) {
         List<Video> videos = feedRepository.findHot(cursor, limit);
         return timePage(FeedScene.HOT, videos, limit, viewerId, true);
+    }
+
+    private FeedPageVO followingFromIndex(List<FollowingItem> fetched, int limit, Long viewerId) {
+        boolean hasMore = fetched.size() > limit;
+        List<FollowingItem> page = hasMore ? fetched.subList(0, limit) : fetched;
+        if (page.isEmpty()) {
+            return new FeedPageVO(FeedScene.FOLLOWING.getValue(), List.of(), "", false);
+        }
+        Map<Long, Video> known = index(feedRepository.findPublishedByIds(page.stream().map(FollowingItem::videoId).toList()));
+        List<PageSlot> slots = page.stream()
+                .map(item -> new PageSlot(item.videoId(), item.authorId(), item.publishedAt()))
+                .toList();
+        FollowingItem last = page.getLast();
+        return new FeedPageVO(FeedScene.FOLLOWING.getValue(), render(slots, viewerId, known),
+                new FeedCursor(last.publishedAt(), last.videoId()).encode(), hasMore);
     }
 
     private FeedPageVO timePage(FeedScene scene, List<Video> videos, int limit, Long viewerId) {

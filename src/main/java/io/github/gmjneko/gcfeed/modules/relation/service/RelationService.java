@@ -4,6 +4,8 @@ import io.github.gmjneko.gcfeed.common.annotation.Idempotent;
 import io.github.gmjneko.gcfeed.common.api.ErrorCode;
 import io.github.gmjneko.gcfeed.common.exception.BusinessException;
 import io.github.gmjneko.gcfeed.common.pagination.*;
+import io.github.gmjneko.gcfeed.modules.mq.FeedEventPublisher;
+import io.github.gmjneko.gcfeed.modules.mq.RelationChangedEvent;
 import io.github.gmjneko.gcfeed.modules.message.model.MessageDraft;
 import io.github.gmjneko.gcfeed.modules.message.model.MessageType;
 import io.github.gmjneko.gcfeed.modules.message.service.MessageNotifier;
@@ -15,18 +17,23 @@ import io.github.gmjneko.gcfeed.modules.user.vo.ActorSnapshot;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class RelationService {
     private final RelationRepository repository;
     private final UserService users;
     private final MessageNotifier messages;
+    private final FeedEventPublisher events;
 
-    public RelationService(RelationRepository repository, UserService users, MessageNotifier messages) {
+    public RelationService(RelationRepository repository, UserService users, MessageNotifier messages,
+                           FeedEventPublisher events) {
         this.repository = repository;
         this.users = users;
         this.messages = messages;
+        this.events = events;
     }
 
     @Idempotent(scope = "relation.follow", userId = "#userId", key = "#key")
@@ -59,8 +66,10 @@ public class RelationService {
             if (active) {
                 notifyFollow(userId, targetId);
             }
-            // TODO(RabbitMQ): 在同一事务记录 Outbox，提交后可靠发布 relation.followed/unfollowed。
-            // TODO(RabbitMQ): 历史作品回填与取关清理收件箱；消费者幂等、重试、死信，禁止提交前发送。
+            events.relationChanged(new RelationChangedEvent(
+                    UUID.randomUUID().toString(),
+                    active ? RelationChangedEvent.FOLLOW : RelationChangedEvent.UNFOLLOW,
+                    userId, targetId, Instant.now()));
         }
         return new FollowVO(userId, targetId, active ? 1 : 2, active,
                 repository.stat(userId).getFollowingCount(), repository.stat(targetId).getFollowerCount());

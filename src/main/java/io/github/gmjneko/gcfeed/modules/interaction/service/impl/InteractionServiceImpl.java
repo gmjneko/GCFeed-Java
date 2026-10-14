@@ -91,8 +91,7 @@ public class InteractionServiceImpl implements InteractionService {
             if (type == ActionType.LIKE && delta > 0) {
                 notifyLike(userId, videoId);
             }
-            // TODO(RabbitMQ): 通过 Outbox/可靠的提交后机制发布 interaction.action_changed，禁止提交前发送。
-            // TODO(RabbitMQ): 消费者需实现事件幂等、有限重试和死信。
+            // 点赞和收藏已经同步落库，热度与通知也在提交后完成，不再投递 interaction.action_changed。
         }
         // 前端以响应计数为准不做乐观更新，所以要叠加尚未刷库的增量和本次尚未记入缓冲的变化。
         VideoStat stat = repository.findStat(videoId).orElse(null);

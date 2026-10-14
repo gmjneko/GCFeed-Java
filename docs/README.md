@@ -57,4 +57,4 @@
 | 密码 | spring-security-crypto | 随 Boot 管理 | 只取 BCrypt，不引入 Spring Security 过滤链 |
 | 校验 | Hibernate Validator | 随 Boot 管理 | `@Valid` 参数校验 |
 | 监控 | Micrometer + Prometheus | 随 Boot 管理 | 暴露 `/actuator/prometheus` |
-| 消息队列 | RabbitMQ | 待接入 | 设计已就绪，见 06 文档异步链路章节 |
+| 消息队列 | RabbitMQ | 已接入 | 关注流扇出、向量队列、Outbox 与死信，见 06 文档 |

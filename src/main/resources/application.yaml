@@ -23,6 +23,18 @@ spring:
       password: ${CR_REDIS_PASSWORD:}
       database: ${CR_REDIS_DATABASE:0}
 
+  rabbitmq:
+    host: ${GCFEED_RABBITMQ_HOST:xxx.xxx.xx.xx}
+    port: ${GCFEED_RABBITMQ_PORT:5672}
+    username: ${GCFEED_RABBITMQ_USERNAME:gcfeed}
+    password: ${GCFEED_RABBITMQ_PASSWORD:gcfeed@rabbitmq}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        prefetch: 10
+        default-requeue-rejected: false
+
   # 计数刷库与对账共用调度线程池，避免长时间对账阻塞刷库
   task:
     scheduling:
@@ -45,6 +57,15 @@ gcfeed:
     root: ./uploads
   scheduling:
     enabled: true
+  rabbitmq:
+    enabled: true
+    relay-interval-ms: 5000
+    big-v-follower-threshold: 10000
+    follower-batch-size: 500
+    inbox-max-len: 1000
+    outbox-max-len: 500
+    backfill-limit: 100
+    max-attempts: 3
   # 视频内容向量：本地哈希 n-gram 生成，供推荐召回使用
   embedding:
     # 向量维度。改维度等于换向量空间，必须同时换模型标识，否则新旧向量会互相覆盖

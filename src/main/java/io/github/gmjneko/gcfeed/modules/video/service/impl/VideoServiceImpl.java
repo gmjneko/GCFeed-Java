@@ -14,7 +14,7 @@ import io.github.gmjneko.gcfeed.modules.video.service.VideoCursorCodec;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoCursor;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoListVO;
 import io.github.gmjneko.gcfeed.modules.video.vo.VideoVO;
-import org.springframework.context.ApplicationEventPublisher;
+import io.github.gmjneko.gcfeed.modules.mq.FeedEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,11 +30,11 @@ import java.util.UUID;
 public class VideoServiceImpl implements VideoService {
 
     private final VideoRepository videoRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final FeedEventPublisher events;
 
-    public VideoServiceImpl(VideoRepository videoRepository, ApplicationEventPublisher eventPublisher) {
+    public VideoServiceImpl(VideoRepository videoRepository, FeedEventPublisher events) {
         this.videoRepository = videoRepository;
-        this.eventPublisher = eventPublisher;
+        this.events = events;
     }
 
     @Override
@@ -108,18 +108,14 @@ public class VideoServiceImpl implements VideoService {
                 .favoriteCount(0)
                 .build());
 
-        // 发布事件在事务提交后由监听器处理（见 VideoPublishedEvent 上的事务阶段约定）：
-        // 事务内发布会让回滚留下指向不存在视频的派生数据，也会把下游耗时算进事务。
-        eventPublisher.publishEvent(new VideoPublishedEvent(
+        // 启用 MQ 时写进当前事务的 Outbox，提交后才发送。关闭 MQ 时仍走进程内事件。
+        events.videoPublished(new VideoPublishedEvent(
                 UUID.randomUUID().toString(),
                 video.getId(),
                 video.getAuthorId(),
                 video.getTitle(),
                 video.getDescription(),
                 Instant.now()));
-
-        // TODO(RabbitMQ): 用事务 Outbox 可靠发布 video.published；普通作者分发粉丝收件箱，大 V 维护发件箱。
-        // TODO(RabbitMQ): 消费者实现幂等、重试和死信；禁止数据库事务提交前直接发送消息。
         return new CreateResult(VideoVO.from(video), true);
     }
 
