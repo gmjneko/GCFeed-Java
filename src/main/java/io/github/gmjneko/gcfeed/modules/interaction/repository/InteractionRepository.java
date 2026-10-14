@@ -18,6 +18,9 @@ public interface InteractionRepository {
     /** 普通读判断视频是否已发布；与删除并发时最多让已删除视频多一次计数，不影响展示。 */
     boolean isPublishedVideo(Long videoId);
 
+    /** 读取已上线视频的作者。视频已下线或不存在时为空，调用方跳过通知。 */
+    Optional<Long> publishedAuthorId(Long videoId);
+
     /** 把取消态翻成有效态，行不存在时插入；返回状态是否真的从未生效变为生效。 */
     boolean activate(Long userId, Long videoId, ActionType type);
 

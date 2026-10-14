@@ -58,6 +58,9 @@ public final class RedisKeyConstant {
     /** 兴趣画像：包含模型空间和维度，空画像也缓存。 */
     public static final String RECOMMENDATION_PROFILE = "recommend:profile" + V1 + "%s:%d:%d";
 
+    /** 未读消息数：{@code message:unread:v1:{userId}}。 */
+    public static final String MESSAGE_UNREAD = "message:unread" + V1 + "%d";
+
     // ==================== 热榜 ====================
 
     /** 热榜分钟桶：{@code feed:hot:minute:v1:{yyyyMMddHHmm}}，结构为 ZSET。 */
@@ -113,5 +116,8 @@ public final class RedisKeyConstant {
 
     /** 重复提交拦截窗口：3 秒；不保存业务结果。 */
     public static final long TTL_DUPLICATE_SUBMIT_SECONDS = 3L;
+
+    /** 未读数缓存：60 秒。写入或已读会提前删除，过期只作为失效失败时的上限。 */
+    public static final long TTL_MESSAGE_UNREAD_SECONDS = 60L;
 
 }

@@ -72,6 +72,13 @@ public enum ErrorCode {
     EMPTY_MESSAGE_CONTENT(50005, "content is required"),
     MESSAGE_CONTENT_TOO_LONG(50006, "content is too long"),
     MESSAGE_NOT_FOUND(50007, "message not found"),
+    EVENT_ID_TOO_LONG(50008, "event id is too long"),
+    MESSAGE_IDEMPOTENCY_KEY_TOO_LONG(50009, "idempotency key is too long"),
+    ACTOR_NICKNAME_TOO_LONG(50010, "actor nickname is too long"),
+    ACTOR_AVATAR_URL_TOO_LONG(50011, "actor avatar url is too long"),
+    LOAD_MESSAGE_FAILED(50012, "failed to load message", 500),
+    SAVE_MESSAGE_FAILED(50013, "failed to save message", 500),
+    UPDATE_MESSAGE_FAILED(50014, "failed to update message", 500),
 
     // ==================== 播放优化模块 60xxx ====================
     INVALID_PLATFORM(60001, "platform is invalid"),

@@ -4,9 +4,12 @@ import io.github.gmjneko.gcfeed.common.jwt.JwtPayload;
 import io.github.gmjneko.gcfeed.modules.user.dto.LoginDTO;
 import io.github.gmjneko.gcfeed.modules.user.dto.RegisterDTO;
 import io.github.gmjneko.gcfeed.modules.user.dto.UpdateProfileDTO;
+import io.github.gmjneko.gcfeed.modules.user.vo.ActorSnapshot;
 import io.github.gmjneko.gcfeed.modules.user.vo.LoginVO;
 import io.github.gmjneko.gcfeed.modules.user.vo.PublicUserVO;
 import io.github.gmjneko.gcfeed.modules.user.vo.UserVO;
+
+import java.util.Optional;
 
 /** 提供账号生命周期和资料读写能力；事务、唯一性和凭证校验均由服务层负责。 */
 public interface UserService {
@@ -25,6 +28,9 @@ public interface UserService {
 
     /** 读取公开资料，隐藏账号、角色与状态；不存在时抛出 USER_NOT_FOUND。 */
     PublicUserVO getPublicProfile(Long userId);
+
+    /** 读取通知展示信息。用户不存在或已注销时返回空，不抛异常。 */
+    Optional<ActorSnapshot> findActor(Long userId);
 
     /** 仅更新非 null 的展示字段；拒绝空更新和空昵称，重复赋值不产生额外业务副作用。 */
     UserVO updateProfile(Long userId, UpdateProfileDTO dto);

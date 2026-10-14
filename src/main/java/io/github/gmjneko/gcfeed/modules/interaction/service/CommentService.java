@@ -7,6 +7,9 @@ import io.github.gmjneko.gcfeed.common.pagination.*;
 import io.github.gmjneko.gcfeed.modules.interaction.entity.InteractionComment;
 import io.github.gmjneko.gcfeed.modules.interaction.repository.CommentRepository;
 import io.github.gmjneko.gcfeed.modules.interaction.vo.*;
+import io.github.gmjneko.gcfeed.modules.message.model.MessageDraft;
+import io.github.gmjneko.gcfeed.modules.message.model.MessageType;
+import io.github.gmjneko.gcfeed.modules.message.service.MessageNotifier;
 import io.github.gmjneko.gcfeed.modules.user.entity.User;
 import io.github.gmjneko.gcfeed.modules.video.service.VideoService;
 import org.springframework.stereotype.Service;
@@ -19,10 +22,12 @@ import java.util.List;
 public class CommentService {
     private final CommentRepository repository;
     private final VideoService videos;
+    private final MessageNotifier messages;
 
-    public CommentService(CommentRepository repository, VideoService videos) {
+    public CommentService(CommentRepository repository, VideoService videos, MessageNotifier messages) {
         this.repository = repository;
         this.videos = videos;
+        this.messages = messages;
     }
 
     public record CreateResult(CommentVO comment, boolean created) {
@@ -44,7 +49,7 @@ public class CommentService {
         String requestKey = key == null ? "" : key.strip();
         repository.lockAuthor(userId);
         // 统一锁顺序：用户 -> 视频 -> 评论；删除路径也先锁视频，再锁评论。
-        videos.lockForInteraction(videoId, true);
+        Long authorId = videos.lockForInteraction(videoId, true);
         if (!requestKey.isEmpty()) {
             InteractionComment existing = repository.byKey(userId, requestKey);
             if (existing != null) {
@@ -62,8 +67,9 @@ public class CommentService {
         comment.setIdempotencyKey(requestKey.isEmpty() ? null : requestKey);
         repository.insert(comment);
         repository.changeCount(videoId, 1);
+        notifyComment(userId, authorId, comment.getId(), text);
         // TODO(RabbitMQ): 事务 Outbox 记录 comment.created，提交后可靠发布；消费端幂等、重试、死信。
-        // TODO(RabbitMQ): 评论热榜 +5，通知视频作者（自己评论自己不通知）；禁止提交前直接发送。
+        // TODO(RabbitMQ): 评论热榜 +5，禁止提交前直接发送。
         return new CreateResult(view(comment, repository.count(videoId)), true);
     }
 
@@ -113,6 +119,22 @@ public class CommentService {
             // TODO(RabbitMQ): 仅实际删除时产生事件，禁止提交前直接发布。
         }
         return new DeleteCommentVO(commentId, 2, repository.count(comment.getVideoId()));
+    }
+
+    private void notifyComment(Long userId, Long authorId, Long commentId, String content) {
+        if (authorId == null || authorId.equals(userId)) {
+            return;
+        }
+        User actor = repository.authors(List.of(userId)).get(userId);
+        messages.notifyAfterCommit(MessageDraft.notification(
+                authorId,
+                MessageType.COMMENT.name(),
+                "收到评论",
+                content,
+                "interaction:comment:" + commentId,
+                userId,
+                actor == null ? null : actor.getNickname(),
+                actor == null ? null : actor.getAvatarUrl()));
     }
 
     private CommentVO view(InteractionComment c, Integer count) {

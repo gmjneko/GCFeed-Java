@@ -14,6 +14,7 @@ import io.github.gmjneko.gcfeed.modules.user.entity.UserRelationStat;
 import io.github.gmjneko.gcfeed.modules.user.mapper.UserMapper;
 import io.github.gmjneko.gcfeed.modules.user.mapper.UserRelationStatMapper;
 import io.github.gmjneko.gcfeed.modules.user.service.UserService;
+import io.github.gmjneko.gcfeed.modules.user.vo.ActorSnapshot;
 import io.github.gmjneko.gcfeed.modules.user.vo.LoginVO;
 import io.github.gmjneko.gcfeed.modules.user.vo.PublicUserVO;
 import io.github.gmjneko.gcfeed.modules.user.vo.UserVO;
@@ -26,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 /**
  * 实现注册、凭证认证和资料读写；注册唯一性由数据库保证，不维护通用幂等记录。
@@ -158,6 +160,21 @@ public class UserServiceImpl implements UserService {
     @Override
     public PublicUserVO getPublicProfile(Long userId) {
         return PublicUserVO.from(getProfile(userId));
+    }
+
+    @Override
+    public Optional<ActorSnapshot> findActor(Long userId) {
+        if (userId == null || userId <= 0) {
+            return Optional.empty();
+        }
+        User user = userMapper.selectOne(Wrappers.<User>lambdaQuery()
+                .select(User::getNickname, User::getAvatarUrl)
+                .eq(User::getId, userId)
+                .ne(User::getStatus, CommonConstant.USER_STATUS_CANCELLED));
+        if (user == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new ActorSnapshot(user.getNickname(), user.getAvatarUrl()));
     }
 
     @Override

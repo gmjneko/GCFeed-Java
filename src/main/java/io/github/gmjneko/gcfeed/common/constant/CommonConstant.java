@@ -53,5 +53,7 @@ public final class CommonConstant {
     public static final int MAX_COMMENT_CONTENT_LENGTH = 1000;
     public static final int MAX_MESSAGE_TITLE_LENGTH = 128;
     public static final int MAX_MESSAGE_CONTENT_LENGTH = 1024;
+    public static final int MAX_MESSAGE_EVENT_ID_LENGTH = 64;
+    public static final int MAX_MESSAGE_ACTOR_NICKNAME_LENGTH = 128;
 
 }

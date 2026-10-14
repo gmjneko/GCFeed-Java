@@ -169,3 +169,27 @@ CREATE TABLE `exposures` (
     KEY `idx_user_last_exposed` (`user_id`, `last_exposed_at`),
     KEY `idx_video_last_exposed` (`video_id`, `last_exposed_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户曝光聚合表';
+
+DROP TABLE IF EXISTS `user_message`;
+CREATE TABLE `user_message` (
+    `id`               BIGINT        NOT NULL AUTO_INCREMENT,
+    `user_id`          BIGINT        NOT NULL,
+    `type`             VARCHAR(16)   NOT NULL,
+    `title`            VARCHAR(128)  NOT NULL,
+    `content`          VARCHAR(1024) NOT NULL,
+    `actor_id`         BIGINT        NOT NULL DEFAULT 0,
+    `actor_nickname`   VARCHAR(128)           DEFAULT NULL,
+    `actor_avatar_url` VARCHAR(512)           DEFAULT NULL,
+    `event_id`         VARCHAR(64)            DEFAULT NULL,
+    `idempotency_key`  VARCHAR(128)           DEFAULT NULL,
+    `is_read`          TINYINT(1)    NOT NULL DEFAULT 0,
+    `read_at`          DATETIME               DEFAULT NULL,
+    `deleted`          TINYINT       NOT NULL DEFAULT 0,
+    `created_at`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- H2 的索引名在 schema 内唯一，不能复用评论表已占用的 idx_user_created。
+    UNIQUE KEY `uk_message_user_event` (`user_id`, `event_id`),
+    UNIQUE KEY `uk_message_user_idempotency` (`user_id`, `idempotency_key`),
+    KEY `idx_message_user_read_created` (`user_id`, `is_read`, `created_at`),
+    KEY `idx_message_user_created` (`user_id`, `created_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '站内通知表';

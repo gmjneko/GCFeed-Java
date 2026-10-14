@@ -4,9 +4,14 @@ import io.github.gmjneko.gcfeed.common.annotation.Idempotent;
 import io.github.gmjneko.gcfeed.common.api.ErrorCode;
 import io.github.gmjneko.gcfeed.common.exception.BusinessException;
 import io.github.gmjneko.gcfeed.common.pagination.*;
+import io.github.gmjneko.gcfeed.modules.message.model.MessageDraft;
+import io.github.gmjneko.gcfeed.modules.message.model.MessageType;
+import io.github.gmjneko.gcfeed.modules.message.service.MessageNotifier;
 import io.github.gmjneko.gcfeed.modules.relation.entity.UserFollow;
 import io.github.gmjneko.gcfeed.modules.relation.repository.RelationRepository;
 import io.github.gmjneko.gcfeed.modules.relation.vo.*;
+import io.github.gmjneko.gcfeed.modules.user.service.UserService;
+import io.github.gmjneko.gcfeed.modules.user.vo.ActorSnapshot;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.*;
 
@@ -15,9 +20,13 @@ import java.util.List;
 @Service
 public class RelationService {
     private final RelationRepository repository;
+    private final UserService users;
+    private final MessageNotifier messages;
 
-    public RelationService(RelationRepository repository) {
+    public RelationService(RelationRepository repository, UserService users, MessageNotifier messages) {
         this.repository = repository;
+        this.users = users;
+        this.messages = messages;
     }
 
     @Idempotent(scope = "relation.follow", userId = "#userId", key = "#key")
@@ -47,11 +56,27 @@ public class RelationService {
                 repository.insert(relation);
             } else repository.setStatus(relation.getId(), active ? 1 : 2);
             repository.changeCounts(userId, targetId, active ? 1 : -1);
+            if (active) {
+                notifyFollow(userId, targetId);
+            }
             // TODO(RabbitMQ): 在同一事务记录 Outbox，提交后可靠发布 relation.followed/unfollowed。
-            // TODO(RabbitMQ): 关注通知及历史作品回填/取关清理收件箱；消费者幂等、重试、死信，禁止提交前发送。
+            // TODO(RabbitMQ): 历史作品回填与取关清理收件箱；消费者幂等、重试、死信，禁止提交前发送。
         }
         return new FollowVO(userId, targetId, active ? 1 : 2, active,
                 repository.stat(userId).getFollowingCount(), repository.stat(targetId).getFollowerCount());
+    }
+
+    private void notifyFollow(Long userId, Long targetId) {
+        ActorSnapshot actor = users.findActor(userId).orElse(null);
+        messages.notifyAfterCommit(MessageDraft.notification(
+                targetId,
+                MessageType.FOLLOW.name(),
+                "新增关注",
+                "关注了你",
+                "relation:follow:" + targetId + ":" + userId,
+                userId,
+                actor == null ? null : actor.nickname(),
+                actor == null ? null : actor.avatarUrl()));
     }
 
     public CursorPage<RelationUserVO> list(Long userId, boolean outgoing, String cursor, int limit) {

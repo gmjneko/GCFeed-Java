@@ -7,6 +7,11 @@ import io.github.gmjneko.gcfeed.modules.interaction.model.ActionType;
 import io.github.gmjneko.gcfeed.modules.interaction.repository.InteractionRepository;
 import io.github.gmjneko.gcfeed.modules.interaction.service.InteractionService;
 import io.github.gmjneko.gcfeed.modules.interaction.vo.ActionVO;
+import io.github.gmjneko.gcfeed.modules.message.model.MessageDraft;
+import io.github.gmjneko.gcfeed.modules.message.model.MessageType;
+import io.github.gmjneko.gcfeed.modules.message.service.MessageNotifier;
+import io.github.gmjneko.gcfeed.modules.user.service.UserService;
+import io.github.gmjneko.gcfeed.modules.user.vo.ActorSnapshot;
 import io.github.gmjneko.gcfeed.modules.video.entity.VideoStat;
 import io.github.gmjneko.gcfeed.modules.video.model.VideoStatField;
 import io.github.gmjneko.gcfeed.modules.video.service.VideoStatDeltaBuffer;
@@ -33,10 +38,15 @@ public class InteractionServiceImpl implements InteractionService {
 
     private final InteractionRepository repository;
     private final VideoStatDeltaBuffer statBuffer;
+    private final UserService users;
+    private final MessageNotifier messages;
 
-    public InteractionServiceImpl(InteractionRepository repository, VideoStatDeltaBuffer statBuffer) {
+    public InteractionServiceImpl(InteractionRepository repository, VideoStatDeltaBuffer statBuffer,
+                                  UserService users, MessageNotifier messages) {
         this.repository = repository;
         this.statBuffer = statBuffer;
+        this.users = users;
+        this.messages = messages;
     }
 
     @Override
@@ -74,8 +84,11 @@ public class InteractionServiceImpl implements InteractionService {
         int delta = changed ? (active ? 1 : -1) : 0;
         if (delta != 0) {
             recordDeltaAfterCommit(videoId, type.statField(), delta);
+            if (type == ActionType.LIKE && delta > 0) {
+                notifyLike(userId, videoId);
+            }
             // TODO(RabbitMQ): 通过 Outbox/可靠的提交后机制发布 interaction.action_changed，禁止提交前发送。
-            // TODO(RabbitMQ): 消费者需实现事件幂等、有限重试和死信，再接入热榜与通知（自赞不通知）。
+            // TODO(RabbitMQ): 消费者需实现事件幂等、有限重试和死信，再接入热榜。
         }
         // 前端以响应计数为准不做乐观更新，所以要叠加尚未刷库的增量和本次尚未记入缓冲的变化。
         VideoStat stat = repository.findStat(videoId).orElse(null);
@@ -85,6 +98,24 @@ public class InteractionServiceImpl implements InteractionService {
                         type == ActionType.LIKE ? delta : 0),
                 currentCount(stat == null ? null : stat.getFavoriteCount(), pending, VideoStatField.FAVORITE_COUNT,
                         type == ActionType.FAVORITE ? delta : 0));
+    }
+
+    /** 只在点赞首次变为有效时通知作者。再次点赞命中同一事件，不会多一条消息。 */
+    private void notifyLike(Long userId, Long videoId) {
+        Long authorId = repository.publishedAuthorId(videoId).orElse(null);
+        if (authorId == null || authorId.equals(userId)) {
+            return;
+        }
+        ActorSnapshot actor = users.findActor(userId).orElse(null);
+        messages.notifyAfterCommit(MessageDraft.notification(
+                authorId,
+                MessageType.LIKE.name(),
+                "收到点赞",
+                "点赞了你的视频",
+                "interaction:like:" + videoId + ":" + userId,
+                userId,
+                actor == null ? null : actor.nickname(),
+                actor == null ? null : actor.avatarUrl()));
     }
 
     /** 回滚的事务不能留下增量；提交后记录失败只影响计数，由对账任务纠正，不能让已成功的互动返回错误。 */

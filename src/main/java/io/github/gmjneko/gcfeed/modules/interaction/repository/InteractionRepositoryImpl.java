@@ -40,6 +40,15 @@ public class InteractionRepositoryImpl implements InteractionRepository {
     }
 
     @Override
+    public Optional<Long> publishedAuthorId(Long videoId) {
+        Video video = videos.selectOne(Wrappers.<Video>lambdaQuery()
+                .select(Video::getAuthorId)
+                .eq(Video::getId, videoId)
+                .eq(Video::getStatus, CommonConstant.VIDEO_STATUS_PUBLISHED));
+        return video == null || video.getAuthorId() == null ? Optional.empty() : Optional.of(video.getAuthorId());
+    }
+
+    @Override
     public boolean activate(Long userId, Long videoId, ActionType type) {
         if (flip(userId, videoId, type, InteractionAction.STATUS_CANCELED, InteractionAction.STATUS_ACTIVE)) {
             return true;
