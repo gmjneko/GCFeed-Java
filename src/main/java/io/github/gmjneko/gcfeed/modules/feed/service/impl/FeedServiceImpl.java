@@ -3,87 +3,235 @@ package io.github.gmjneko.gcfeed.modules.feed.service.impl;
 import io.github.gmjneko.gcfeed.common.api.ErrorCode;
 import io.github.gmjneko.gcfeed.common.constant.CommonConstant;
 import io.github.gmjneko.gcfeed.common.exception.BusinessException;
+import io.github.gmjneko.gcfeed.modules.exposure.model.ExposureInputNormalizer;
+import io.github.gmjneko.gcfeed.modules.feed.cache.CachedTimelinePage;
+import io.github.gmjneko.gcfeed.modules.feed.cache.CachedVideoStat;
+import io.github.gmjneko.gcfeed.modules.feed.cache.FeedCache;
+import io.github.gmjneko.gcfeed.modules.feed.cache.FeedCacheKeys;
+import io.github.gmjneko.gcfeed.modules.feed.cache.FeedCardCache;
+import io.github.gmjneko.gcfeed.modules.feed.hot.HotRanking;
+import io.github.gmjneko.gcfeed.modules.feed.hot.HotWindows;
 import io.github.gmjneko.gcfeed.modules.feed.model.FeedCursor;
 import io.github.gmjneko.gcfeed.modules.feed.model.FeedScene;
+import io.github.gmjneko.gcfeed.modules.feed.model.HotCursor;
+import io.github.gmjneko.gcfeed.modules.feed.model.HotScoreCursor;
 import io.github.gmjneko.gcfeed.modules.feed.repository.FeedRepository;
 import io.github.gmjneko.gcfeed.modules.feed.service.FeedService;
+import io.github.gmjneko.gcfeed.modules.feed.support.SingleFlight;
 import io.github.gmjneko.gcfeed.modules.feed.vo.FeedItemVO;
 import io.github.gmjneko.gcfeed.modules.feed.vo.FeedPageVO;
 import io.github.gmjneko.gcfeed.modules.interaction.entity.InteractionAction;
+import io.github.gmjneko.gcfeed.modules.recommendation.dto.QueryRecommendationDTO;
+import io.github.gmjneko.gcfeed.modules.recommendation.service.RecommendationService;
 import io.github.gmjneko.gcfeed.modules.user.entity.User;
 import io.github.gmjneko.gcfeed.modules.video.entity.Video;
 import io.github.gmjneko.gcfeed.modules.video.entity.VideoStat;
+import io.github.gmjneko.gcfeed.modules.video.model.VideoStatField;
+import io.github.gmjneko.gcfeed.modules.video.service.VideoStatDeltaBuffer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import io.github.gmjneko.gcfeed.modules.exposure.model.ExposureInputNormalizer;
-import io.github.gmjneko.gcfeed.modules.recommendation.dto.QueryRecommendationDTO;
-import io.github.gmjneko.gcfeed.modules.recommendation.service.RecommendationService;
+import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 校验请求、计算分页位置并按视频查询顺序组装卡片。 */
+/** 校验请求、按场景取页，再用卡片和计数缓存组装。点赞和关注状态每次按当前用户查询。 */
 @Service
 public class FeedServiceImpl implements FeedService {
+
+    private static final Logger log = LoggerFactory.getLogger(FeedServiceImpl.class);
+
     private final FeedRepository feedRepository;
-
     private final RecommendationService recommendations;
+    private final FeedCache feedCache;
+    private final HotRanking hotRanking;
+    private final VideoStatDeltaBuffer statBuffer;
+    private final Clock clock;
+    private final JsonMapper json;
+    private final SingleFlight<TimelineLoad> timelineLoads = new SingleFlight<>();
 
-    public FeedServiceImpl(FeedRepository feedRepository, RecommendationService recommendations) {
+    public FeedServiceImpl(FeedRepository feedRepository, RecommendationService recommendations, FeedCache feedCache,
+                           HotRanking hotRanking, VideoStatDeltaBuffer statBuffer, Clock clock, JsonMapper json) {
         this.feedRepository = feedRepository;
         this.recommendations = recommendations;
+        this.feedCache = feedCache;
+        this.hotRanking = hotRanking;
+        this.statBuffer = statBuffer;
+        this.clock = clock;
+        this.json = json;
     }
 
     @Override
     public FeedPageVO getFeed(String scene, String cursor, int limit, Long viewerId, String requestId) {
         FeedScene actualScene = FeedScene.normalize(scene);
-        if (actualScene != FeedScene.TIMELINE && viewerId == null) {
+        if ((actualScene == FeedScene.FOLLOWING || actualScene == FeedScene.RECOMMEND) && viewerId == null) {
             throw new BusinessException(ErrorCode.VIEWER_REQUIRED);
         }
         if (limit <= 0) {
             throw new BusinessException(ErrorCode.INVALID_LIMIT);
         }
-        // 超过上限时截断；非法游标在访问数据库前直接拒绝，不能退回首页。
         int actualLimit = Math.min(limit, CommonConstant.MAX_PAGE_SIZE);
         String actualRequestId = ExposureInputNormalizer.requestId(requestId);
-        // 推荐必须先分流，其快照游标不能送进时间线的时间/ID 解码器。
         if (actualScene == FeedScene.RECOMMEND) {
             var result = recommendations.recommend(new QueryRecommendationDTO(viewerId, actualScene.getValue(),
                     actualRequestId, cursor, actualLimit));
             List<Video> page = feedRepository.findPublishedByIds(result.candidates().stream().map(c -> c.videoId()).toList());
-            // 查询资格后仍可能并发下架，缺失卡片跳过；分页位置继续以推荐快照为准。
-            return new FeedPageVO(actualScene.getValue(), assemble(page, viewerId), result.nextCursor(), result.hasMore());
+            return new FeedPageVO(actualScene.getValue(), render(slots(page), viewerId, index(page)),
+                    result.nextCursor(), result.hasMore());
         }
-        FeedCursor position = FeedCursor.decode(cursor);
-        List<Video> videos = actualScene == FeedScene.FOLLOWING
-                ? feedRepository.findFollowing(viewerId, position, actualLimit)
-                : feedRepository.findTimeline(position, actualLimit);
-        if (videos.isEmpty()) {
-            // 空页不再查询关联表，并用空数组、空游标明确表示没有结果。
-            return new FeedPageVO(actualScene.getValue(), List.of(), "", false);
+        if (actualScene == FeedScene.HOT) {
+            return hot(cursor, actualLimit, viewerId);
         }
-        // 仓储多查的一条只用于判断下一页，不参与本页卡片组装或游标生成。
-        boolean hasMore = videos.size() > actualLimit;
-        List<Video> page = hasMore ? videos.subList(0, actualLimit) : videos;
-        List<FeedItemVO> items = assemble(page, viewerId);
-        // 非空末页也返回位置；是否继续由 has_more 决定，不依赖游标是否为空。
-        Video last = page.get(page.size() - 1);
-        String nextCursor = new FeedCursor(last.getPublishedAt(), last.getId()).encode();
-        return new FeedPageVO(actualScene.getValue(), items, nextCursor, hasMore);
+        if (actualScene == FeedScene.FOLLOWING) {
+            FeedCursor position = FeedCursor.decode(cursor);
+            List<Video> videos = feedRepository.findFollowing(viewerId, position, actualLimit);
+            return timePage(FeedScene.FOLLOWING, videos, actualLimit, viewerId);
+        }
+        return timeline(cursor, actualLimit, viewerId);
     }
 
-    private List<FeedItemVO> assemble(List<Video> page, Long viewerId) {
-        if (page.isEmpty()) return List.of();
-        List<Long> videoIds = page.stream().map(Video::getId).toList();
-        // 同一作者可能有多条视频，先去重再批量读取，查询次数不随页大小增长。
-        Map<Long, User> authors = feedRepository.findAuthors(page.stream().map(Video::getAuthorId).distinct().toList());
-        Map<Long, VideoStat> stats = feedRepository.findStats(videoIds);
-        Set<Long> followedAuthors = feedRepository.findFollowedAuthors(viewerId,
-                page.stream().map(Video::getAuthorId).distinct().toList());
+    private FeedPageVO timeline(String cursor, int limit, Long viewerId) {
+        FeedCursor position = FeedCursor.decode(cursor);
+        String key = FeedCacheKeys.pageKey(FeedScene.TIMELINE.getValue(), cursor, limit);
+        TimelineLoad loaded = feedCache.findPage(key)
+                .map(page -> new TimelineLoad(page, Map.of()))
+                .orElseGet(() -> timelineLoads.call(key, () -> feedCache.findPage(key)
+                        .map(page -> new TimelineLoad(page, Map.of()))
+                        .orElseGet(() -> loadTimeline(position, limit, key, cursor))));
+        if (loaded.page().items().isEmpty()) {
+            return new FeedPageVO(FeedScene.TIMELINE.getValue(), List.of(), "", false);
+        }
+        List<PageSlot> slots = loaded.page().items().stream()
+                .map(item -> new PageSlot(item.videoId(), item.authorId(), item.publishedAt()))
+                .toList();
+        return new FeedPageVO(FeedScene.TIMELINE.getValue(), render(slots, viewerId, loaded.known()),
+                loaded.page().nextCursor(), loaded.page().hasMore());
+    }
+
+    private TimelineLoad loadTimeline(FeedCursor position, int limit, String key, String cursor) {
+        List<Video> videos = feedRepository.findTimeline(position, limit);
+        boolean hasMore = videos.size() > limit;
+        List<Video> page = hasMore ? videos.subList(0, limit) : videos;
+        String next = page.isEmpty() ? "" : new FeedCursor(page.getLast().getPublishedAt(), page.getLast().getId()).encode();
+        CachedTimelinePage cached = new CachedTimelinePage(page.stream()
+                .map(video -> new CachedTimelinePage.CachedTimelineItem(video.getId(), video.getAuthorId(), video.getPublishedAt()))
+                .toList(), next, hasMore);
+        feedCache.savePage(key, cached, FeedCacheKeys.pageTtl(cursor, key));
+        return new TimelineLoad(cached, index(page));
+    }
+
+    private FeedPageVO hot(String cursor, int limit, Long viewerId) {
+        HotCursor hotCursor = HotCursor.decode(cursor, json);
+        if (hotCursor != null && hotCursor.kind() == HotCursor.Kind.SCORE) {
+            if (hotRanking.available()) {
+                throw new BusinessException(ErrorCode.INVALID_CURSOR);
+            }
+            log.warn("热榜降级到数据库查询");
+            return hotFromDatabase(hotCursor.score(), limit, viewerId);
+        }
+        LocalDateTime windowEnd = hotCursor == null
+                ? HotWindows.minute(clock.instant())
+                : hotCursor.windowEnd().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+        int offset = hotCursor == null ? 0 : hotCursor.offset();
+        HotRanking.HotPage ranked = hotRanking.page(windowEnd, offset, limit + 1);
+        if (!ranked.available()) {
+            if (ranked.failure() != null) {
+                log.warn("热榜降级到数据库查询", ranked.failure());
+            } else {
+                log.warn("热榜降级到数据库查询");
+            }
+            if (hotCursor != null && hotCursor.kind() == HotCursor.Kind.WINDOW) {
+                throw new BusinessException(ErrorCode.INVALID_CURSOR);
+            }
+            return hotFromDatabase(null, limit, viewerId);
+        }
+        boolean hasMore = ranked.videoIds().size() > limit;
+        List<Long> pageIds = hasMore ? ranked.videoIds().subList(0, limit) : ranked.videoIds();
+        List<PageSlot> slots = pageIds.stream().map(id -> new PageSlot(id, null, null)).toList();
+        int nextOffset = offset + pageIds.size();
+        String next = pageIds.isEmpty() ? "" : HotCursor.encodeWindow(json, windowEnd, nextOffset);
+        return new FeedPageVO(FeedScene.HOT.getValue(), render(slots, viewerId, Map.of()), next, hasMore);
+    }
+
+    private FeedPageVO hotFromDatabase(HotScoreCursor cursor, int limit, Long viewerId) {
+        List<Video> videos = feedRepository.findHot(cursor, limit);
+        return timePage(FeedScene.HOT, videos, limit, viewerId, true);
+    }
+
+    private FeedPageVO timePage(FeedScene scene, List<Video> videos, int limit, Long viewerId) {
+        return timePage(scene, videos, limit, viewerId, false);
+    }
+
+    private FeedPageVO timePage(FeedScene scene, List<Video> videos, int limit, Long viewerId, boolean hotScore) {
+        if (videos.isEmpty()) {
+            return new FeedPageVO(scene.getValue(), List.of(), "", false);
+        }
+        boolean hasMore = videos.size() > limit;
+        List<Video> page = hasMore ? videos.subList(0, limit) : videos;
+        Video last = page.getLast();
+        String next = hotScore
+                ? HotCursor.encodeScore(json, new HotScoreCursor(valueOrZero(last.getHotScore()), last.getPublishedAt(), last.getId()))
+                : new FeedCursor(last.getPublishedAt(), last.getId()).encode();
+        return new FeedPageVO(scene.getValue(), render(slots(page), viewerId, index(page)), next, hasMore);
+    }
+
+    private List<FeedItemVO> render(List<PageSlot> slots, Long viewerId, Map<Long, Video> known) {
+        if (slots.isEmpty()) {
+            return List.of();
+        }
+        List<Long> videoIds = slots.stream().map(PageSlot::videoId).distinct().toList();
+        Map<Long, FeedCardCache> cards = new HashMap<>(feedCache.findCards(videoIds));
+        List<FeedCardCache> missingCards = new ArrayList<>();
+        List<Video> loaded = new ArrayList<>();
+        List<Long> unresolved = new ArrayList<>();
+        for (Long videoId : videoIds) {
+            if (cards.containsKey(videoId)) {
+                continue;
+            }
+            Video video = known.get(videoId);
+            if (video == null) {
+                unresolved.add(videoId);
+            } else {
+                loaded.add(video);
+            }
+        }
+        if (!unresolved.isEmpty()) {
+            loaded.addAll(feedRepository.findPublishedByIds(unresolved));
+        }
+        if (!loaded.isEmpty()) {
+            Map<Long, User> authors = feedRepository.findAuthors(loaded.stream().map(Video::getAuthorId).distinct().toList());
+            for (Video video : loaded) {
+                User author = authors.get(video.getAuthorId());
+                FeedCardCache card = new FeedCardCache(video.getId(), video.getAuthorId(),
+                        author == null ? null : author.getNickname(),
+                        author == null ? null : author.getAvatarUrl(),
+                        video.getTitle(), video.getDescription(), video.getMediaUrl(), video.getCoverUrl(),
+                        video.getPublishedAt());
+                cards.put(video.getId(), card);
+                missingCards.add(card);
+            }
+            feedCache.saveCards(missingCards);
+        }
+        Map<Long, CachedVideoStat> stats = stats(videoIds);
+        Set<Long> authorIds = new HashSet<>();
+        for (PageSlot slot : slots) {
+            FeedCardCache card = cards.get(slot.videoId());
+            if (card != null) {
+                authorIds.add(card.authorId());
+            } else if (slot.authorId() != null) {
+                authorIds.add(slot.authorId());
+            }
+        }
+        Set<Long> followedAuthors = feedRepository.findFollowedAuthors(viewerId, List.copyOf(authorIds));
         Set<Long> liked = new HashSet<>();
         Set<Long> favorited = new HashSet<>();
-        // 匿名请求保留空集合，卡片状态自然为 false；登录时只查询当前用户的有效行为。
         if (viewerId != null) {
             for (InteractionAction action : feedRepository.findViewerActions(viewerId, videoIds)) {
                 if (InteractionAction.LIKE.equals(action.getActionType())) {
@@ -93,24 +241,86 @@ public class FeedServiceImpl implements FeedService {
                 }
             }
         }
-        // 批量查询返回的 Map 没有顺序，必须遍历原视频页以保持游标排序。
-        return page.stream().map(video -> {
-            var author = authors.get(video.getAuthorId());
-            var stat = stats.get(video.getId());
-            // 作者已注销或统计行缺失时仍保留视频，用空作者资料和零计数兜底。
-            return new FeedItemVO(video.getId(), video.getAuthorId(),
-                    author == null ? null : author.getNickname(),
-                    author == null ? null : author.getAvatarUrl(),
-                    video.getTitle(), video.getDescription(), video.getMediaUrl(), video.getCoverUrl(),
-                    stat == null ? 0 : valueOrZero(stat.getLikeCount()),
-                    stat == null ? 0 : valueOrZero(stat.getCommentCount()),
-                    stat == null ? 0 : valueOrZero(stat.getFavoriteCount()),
-                    liked.contains(video.getId()), favorited.contains(video.getId()),
-                    followedAuthors.contains(video.getAuthorId()), video.getPublishedAt());
-        }).toList();
+        List<FeedItemVO> items = new ArrayList<>(slots.size());
+        for (PageSlot slot : slots) {
+            FeedCardCache card = cards.get(slot.videoId());
+            if (card == null) {
+                continue;
+            }
+            CachedVideoStat stat = stats.get(slot.videoId());
+            items.add(new FeedItemVO(card.videoId(), card.authorId(), card.authorNickname(), card.authorAvatarUrl(),
+                    card.title(), card.description(), card.mediaUrl(), card.coverUrl(),
+                    stat == null ? 0 : stat.likeCount(),
+                    stat == null ? 0 : stat.commentCount(),
+                    stat == null ? 0 : stat.favoriteCount(),
+                    liked.contains(card.videoId()), favorited.contains(card.videoId()),
+                    followedAuthors.contains(card.authorId()),
+                    card.publishedAt() != null ? card.publishedAt() : slot.publishedAt()));
+        }
+        return items;
+    }
+
+    private Map<Long, CachedVideoStat> stats(List<Long> videoIds) {
+        Map<Long, CachedVideoStat> cached = new HashMap<>(feedCache.findStats(videoIds));
+        List<Long> missing = videoIds.stream().filter(id -> !cached.containsKey(id)).toList();
+        if (!missing.isEmpty()) {
+            Map<Long, VideoStat> stored = feedRepository.findStats(missing);
+            Map<Long, CachedVideoStat> fresh = new HashMap<>();
+            for (Long videoId : missing) {
+                VideoStat stat = stored.get(videoId);
+                CachedVideoStat value = new CachedVideoStat(
+                        stat == null ? 0 : valueOrZero(stat.getLikeCount()),
+                        stat == null ? 0 : valueOrZero(stat.getCommentCount()),
+                        stat == null ? 0 : valueOrZero(stat.getFavoriteCount()));
+                fresh.put(videoId, value);
+                cached.put(videoId, value);
+            }
+            feedCache.saveStats(fresh);
+        }
+        Map<Long, CachedVideoStat> merged = new HashMap<>();
+        for (Long videoId : videoIds) {
+            CachedVideoStat stat = cached.getOrDefault(videoId, new CachedVideoStat(0, 0, 0));
+            Map<VideoStatField, Long> pending = pending(videoId);
+            merged.put(videoId, new CachedVideoStat(
+                    count(stat.likeCount(), pending.getOrDefault(VideoStatField.LIKE_COUNT, 0L)),
+                    stat.commentCount(),
+                    count(stat.favoriteCount(), pending.getOrDefault(VideoStatField.FAVORITE_COUNT, 0L))));
+        }
+        return merged;
+    }
+
+    private Map<VideoStatField, Long> pending(Long videoId) {
+        try {
+            return statBuffer.pending(videoId);
+        } catch (RuntimeException ex) {
+            log.warn("读取待刷库计数失败，Feed 只使用已落库计数 videoId={}: {}", videoId, ex.toString());
+            return Map.of();
+        }
+    }
+
+    private List<PageSlot> slots(List<Video> videos) {
+        return videos.stream().map(video -> new PageSlot(video.getId(), video.getAuthorId(), video.getPublishedAt())).toList();
+    }
+
+    private Map<Long, Video> index(List<Video> videos) {
+        Map<Long, Video> indexed = new HashMap<>();
+        for (Video video : videos) {
+            indexed.put(video.getId(), video);
+        }
+        return indexed;
+    }
+
+    private int count(int stored, long pending) {
+        return (int) Math.max(0, stored + pending);
     }
 
     private int valueOrZero(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private record PageSlot(long videoId, Long authorId, LocalDateTime publishedAt) {
+    }
+
+    private record TimelineLoad(CachedTimelinePage page, Map<Long, Video> known) {
     }
 }

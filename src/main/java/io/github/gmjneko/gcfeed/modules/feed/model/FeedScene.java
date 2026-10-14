@@ -5,9 +5,9 @@ import io.github.gmjneko.gcfeed.common.exception.BusinessException;
 
 import java.util.Locale;
 
-/** 当前开放全站时间线及数据库关注流及推荐流。 */
+/** 当前开放时间线、热榜、数据库关注流和推荐流。 */
 public enum FeedScene {
-    TIMELINE("timeline"), FOLLOWING("following"), RECOMMEND("recommend");
+    TIMELINE("timeline"), HOT("hot"), FOLLOWING("following"), RECOMMEND("recommend");
 
     private final String value;
 
@@ -25,6 +25,7 @@ public enum FeedScene {
         if (value.isEmpty() || TIMELINE.value.equals(value)) {
             return TIMELINE;
         }
+        if (HOT.value.equals(value)) return HOT;
         if (FOLLOWING.value.equals(value)) return FOLLOWING;
         if (RECOMMEND.value.equals(value)) return RECOMMEND;
         // 未实现的场景显式拒绝，避免调用方误以为拿到了对应场景的数据。

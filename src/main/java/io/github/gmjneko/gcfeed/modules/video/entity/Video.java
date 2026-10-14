@@ -29,7 +29,9 @@ public class Video {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /** 以下字段来自 video_stat 联查，不写入 video 表。 */
+    /** 以下字段来自联查，不写入 video 表。 */
+    @TableField(exist = false)
+    private Integer hotScore;
     @TableField(exist = false)
     private Integer likeCount;
     @TableField(exist = false)
@@ -53,6 +55,7 @@ public class Video {
         this.idempotencyKey = builder.idempotencyKey;
         this.createdAt = builder.createdAt;
         this.updatedAt = builder.updatedAt;
+        this.hotScore = builder.hotScore;
         this.likeCount = builder.likeCount;
         this.commentCount = builder.commentCount;
         this.favoriteCount = builder.favoriteCount;
@@ -150,6 +153,14 @@ public class Video {
         this.updatedAt = updatedAt;
     }
 
+    public Integer getHotScore() {
+        return hotScore;
+    }
+
+    public void setHotScore(Integer hotScore) {
+        this.hotScore = hotScore;
+    }
+
     public Integer getLikeCount() {
         return likeCount;
     }
@@ -187,6 +198,7 @@ public class Video {
         private String idempotencyKey;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
+        private Integer hotScore;
         private Integer likeCount;
         private Integer commentCount;
         private Integer favoriteCount;
@@ -243,6 +255,11 @@ public class Video {
 
         public Builder updatedAt(LocalDateTime value) {
             this.updatedAt = value;
+            return this;
+        }
+
+        public Builder hotScore(Integer value) {
+            this.hotScore = value;
             return this;
         }
 

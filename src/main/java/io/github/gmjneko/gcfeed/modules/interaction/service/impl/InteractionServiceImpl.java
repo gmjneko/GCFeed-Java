@@ -3,6 +3,7 @@ package io.github.gmjneko.gcfeed.modules.interaction.service.impl;
 import io.github.gmjneko.gcfeed.common.annotation.Idempotent;
 import io.github.gmjneko.gcfeed.common.api.ErrorCode;
 import io.github.gmjneko.gcfeed.common.exception.BusinessException;
+import io.github.gmjneko.gcfeed.modules.feed.hot.HotRanking;
 import io.github.gmjneko.gcfeed.modules.interaction.model.ActionType;
 import io.github.gmjneko.gcfeed.modules.interaction.repository.InteractionRepository;
 import io.github.gmjneko.gcfeed.modules.interaction.service.InteractionService;
@@ -38,13 +39,15 @@ public class InteractionServiceImpl implements InteractionService {
 
     private final InteractionRepository repository;
     private final VideoStatDeltaBuffer statBuffer;
+    private final HotRanking hotRanking;
     private final UserService users;
     private final MessageNotifier messages;
 
     public InteractionServiceImpl(InteractionRepository repository, VideoStatDeltaBuffer statBuffer,
-                                  UserService users, MessageNotifier messages) {
+                                  HotRanking hotRanking, UserService users, MessageNotifier messages) {
         this.repository = repository;
         this.statBuffer = statBuffer;
+        this.hotRanking = hotRanking;
         this.users = users;
         this.messages = messages;
     }
@@ -83,12 +86,13 @@ public class InteractionServiceImpl implements InteractionService {
         boolean changed = active ? repository.activate(userId, videoId, type) : repository.cancel(userId, videoId, type);
         int delta = changed ? (active ? 1 : -1) : 0;
         if (delta != 0) {
-            recordDeltaAfterCommit(videoId, type.statField(), delta);
+            int hotDelta = delta * (type == ActionType.LIKE ? HotRanking.LIKE_WEIGHT : HotRanking.FAVORITE_WEIGHT);
+            recordDeltaAfterCommit(videoId, type.statField(), delta, hotDelta);
             if (type == ActionType.LIKE && delta > 0) {
                 notifyLike(userId, videoId);
             }
             // TODO(RabbitMQ): 通过 Outbox/可靠的提交后机制发布 interaction.action_changed，禁止提交前发送。
-            // TODO(RabbitMQ): 消费者需实现事件幂等、有限重试和死信，再接入热榜。
+            // TODO(RabbitMQ): 消费者需实现事件幂等、有限重试和死信。
         }
         // 前端以响应计数为准不做乐观更新，所以要叠加尚未刷库的增量和本次尚未记入缓冲的变化。
         VideoStat stat = repository.findStat(videoId).orElse(null);
@@ -118,8 +122,8 @@ public class InteractionServiceImpl implements InteractionService {
                 actor == null ? null : actor.avatarUrl()));
     }
 
-    /** 回滚的事务不能留下增量；提交后记录失败只影响计数，由对账任务纠正，不能让已成功的互动返回错误。 */
-    private void recordDeltaAfterCommit(Long videoId, VideoStatField field, int delta) {
+    /** 回滚的事务不能留下增量或热度；提交后的记录失败不改变已经成功的互动。 */
+    private void recordDeltaAfterCommit(Long videoId, VideoStatField field, int delta, int hotDelta) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -128,6 +132,7 @@ public class InteractionServiceImpl implements InteractionService {
                 } catch (RuntimeException ex) {
                     log.warn("记录计数增量失败，等待对账纠正 videoId={} field={} delta={}", videoId, field, delta, ex);
                 }
+                hotRanking.add(videoId, hotDelta);
             }
         });
     }

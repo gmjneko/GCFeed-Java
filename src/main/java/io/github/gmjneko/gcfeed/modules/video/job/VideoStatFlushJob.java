@@ -1,5 +1,6 @@
 package io.github.gmjneko.gcfeed.modules.video.job;
 
+import io.github.gmjneko.gcfeed.modules.feed.cache.FeedCache;
 import io.github.gmjneko.gcfeed.modules.video.model.VideoStatField;
 import io.github.gmjneko.gcfeed.modules.video.repository.VideoRepository;
 import io.github.gmjneko.gcfeed.modules.video.service.VideoStatDeltaBuffer;
@@ -25,12 +26,14 @@ public class VideoStatFlushJob {
 
     private final VideoStatDeltaBuffer buffer;
     private final VideoRepository videoRepository;
+    private final FeedCache feedCache;
     private final int batchSize;
 
-    public VideoStatFlushJob(VideoStatDeltaBuffer buffer, VideoRepository videoRepository,
+    public VideoStatFlushJob(VideoStatDeltaBuffer buffer, VideoRepository videoRepository, FeedCache feedCache,
                              @Value("${gcfeed.stat.flush-batch-size:500}") int batchSize) {
         this.buffer = buffer;
         this.videoRepository = videoRepository;
+        this.feedCache = feedCache;
         this.batchSize = batchSize;
     }
 
@@ -58,6 +61,8 @@ public class VideoStatFlushJob {
             if (videoRepository.addStatDeltas(videoId, deltas) == 0) {
                 log.warn("视频统计行不存在，丢弃计数增量 videoId={} deltas={}", videoId, deltas);
             }
+            // 库里的基数已经变了，必须丢掉旧缓存，否则待刷增量被清空后读数会退回刷库前的值。
+            feedCache.evictStat(videoId);
             return true;
         } catch (RuntimeException ex) {
             restore(videoId, deltas, ex);
