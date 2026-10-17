@@ -43,10 +43,17 @@ public class RedisVideoStatDeltaBuffer implements VideoStatDeltaBuffer {
 
     @Override
     public void add(Long videoId, VideoStatField field, long delta) {
-        redisson.getScript(StringCodec.INSTANCE).eval(RScript.Mode.READ_WRITE, ADD_SCRIPT, RScript.ReturnType.LONG,
-                List.of(deltaKey(videoId), RedisKeyConstant.VIDEO_STAT_DIRTY),
-                field.column(), String.valueOf(delta), String.valueOf(videoId),
-                String.valueOf(RedisKeyConstant.TTL_VIDEO_STAT_DELTA_SECONDS));
+        redisson.getScript(StringCodec.INSTANCE)
+                .eval(
+                        RScript.Mode.READ_WRITE,
+                        ADD_SCRIPT,
+                        RScript.ReturnType.LONG,
+                        List.of(deltaKey(videoId), RedisKeyConstant.VIDEO_STAT_DIRTY),
+                        field.column(),
+                        String.valueOf(delta),
+                        String.valueOf(videoId),
+                        String.valueOf(RedisKeyConstant.TTL_VIDEO_STAT_DELTA_SECONDS)
+                );
     }
 
     @Override
