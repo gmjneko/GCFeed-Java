@@ -77,6 +77,7 @@ public class JwtInterceptor implements HandlerInterceptor {
         JwtPayload payload;
         try {
             payload = jwtUtil.parseAccessToken(token);
+            // 检查 jti 是否在黑名单中，避免已登出令牌继续使用。
             tokenBlacklist.assertNotRevoked(payload);
         } catch (BusinessException ex) {
             if (requireAuth) {
