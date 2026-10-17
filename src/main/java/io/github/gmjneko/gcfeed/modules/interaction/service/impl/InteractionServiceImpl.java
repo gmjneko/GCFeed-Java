@@ -127,10 +127,13 @@ public class InteractionServiceImpl implements InteractionService {
             @Override
             public void afterCommit() {
                 try {
+                    // 把视频的 star/favorite 的增量存到 redis
+                    // 定时任务刷回库中; 计数可能会丢失或重复，最终一致性由定时任务对账纠正。
                     statBuffer.add(videoId, field, delta);
                 } catch (RuntimeException ex) {
                     log.warn("记录计数增量失败，等待对账纠正 videoId={} field={} delta={}", videoId, field, delta, ex);
                 }
+                // 把视频的热度增量存到 redis
                 hotRanking.add(videoId, hotDelta);
             }
         });
