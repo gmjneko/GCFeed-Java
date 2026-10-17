@@ -51,7 +51,9 @@ public class FeedCardRenderer {
         this.json = json;
     }
 
-    /** 把视频列表组装成带时间/ID 游标的一页，供关注流数据库路径使用。 */
+    /**
+     * 把视频列表组装成带时间/ID 游标的一页，供关注流数据库路径使用。
+     */
     public FeedPageVO timePage(FeedScene scene, List<Video> videos, int limit, Long viewerId) {
         return timePage(scene, videos, limit, viewerId, false);
     }
@@ -206,7 +208,9 @@ public class FeedCardRenderer {
         return merged;
     }
 
-    /** 读取增量缓冲；Redis 失败只打日志退化为已落库计数，不让 Feed 页失败。 */
+    /**
+     * 读取增量缓冲；Redis 失败只打日志退化为已落库计数，不让 Feed 页失败。
+     */
     private Map<VideoStatField, Long> pending(Long videoId) {
         try {
             return statBuffer.pending(videoId);
@@ -216,12 +220,16 @@ public class FeedCardRenderer {
         }
     }
 
-    /** 视频列表转渲染槽位。 */
+    /**
+     * 视频列表转渲染槽位。
+     */
     public List<PageSlot> slots(List<Video> videos) {
         return videos.stream().map(video -> new PageSlot(video.getId(), video.getAuthorId(), video.getPublishedAt())).toList();
     }
 
-    /** 视频 ID -> 视频索引，供 render 作为“本页已带出”的已知数据复用。 */
+    /**
+     * 视频 ID -> 视频索引，供 render 作为“本页已带出”的已知数据复用。
+     */
     public Map<Long, Video> index(List<Video> videos) {
         Map<Long, Video> indexed = new HashMap<>();
         for (Video video : videos) {
@@ -230,7 +238,9 @@ public class FeedCardRenderer {
         return indexed;
     }
 
-    /** 已落库计数 + 待刷库增量，负数截断为 0，防止取关等反向操作后显示负值。 */
+    /**
+     * 已落库计数 + 待刷库增量，负数截断为 0，防止取关等反向操作后显示负值。
+     */
     private int count(int stored, long pending) {
         return (int) Math.max(0, stored + pending);
     }
